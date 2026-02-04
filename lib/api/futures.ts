@@ -91,12 +91,27 @@ async function fetchLiveCattleFutures(): Promise<FuturesContract[]> {
     // In production, use proper API
     const frontMonthData = await fetchYahooQuote("LE=F");
 
-    if (frontMonthData) {
+    if (frontMonthData && frontMonthData.lastPrice !== undefined) {
+      const basePrice = frontMonthData.lastPrice;
+      const baseChange = frontMonthData.change ?? 0;
+      const baseChangePercent = frontMonthData.changePercent ?? 0;
+      const baseOpen = frontMonthData.open ?? basePrice;
+      const baseHigh = frontMonthData.high ?? basePrice;
+      const baseLow = frontMonthData.low ?? basePrice;
+      const baseVolume = frontMonthData.volume ?? 0;
+
       contracts.push({
-        ...frontMonthData,
         symbol: symbols[0] || "LE",
         name: "Live Cattle",
         contractMonth: getContractMonth(symbols[0]),
+        lastPrice: basePrice,
+        change: baseChange,
+        changePercent: baseChangePercent,
+        open: baseOpen,
+        high: baseHigh,
+        low: baseLow,
+        volume: baseVolume,
+        lastUpdated: frontMonthData.lastUpdated || new Date().toISOString(),
       });
 
       // Estimate deferred months based on typical contango/backwardation
@@ -106,13 +121,13 @@ async function fetchLiveCattleFutures(): Promise<FuturesContract[]> {
           symbol: symbols[i],
           name: "Live Cattle",
           contractMonth: getContractMonth(symbols[i]),
-          lastPrice: frontMonthData.lastPrice + spread,
-          change: frontMonthData.change * (0.8 + Math.random() * 0.4),
-          changePercent: frontMonthData.changePercent * (0.8 + Math.random() * 0.4),
-          open: frontMonthData.open + spread,
-          high: frontMonthData.high + spread,
-          low: frontMonthData.low + spread,
-          volume: Math.floor(frontMonthData.volume * (0.3 + Math.random() * 0.4)),
+          lastPrice: basePrice + spread,
+          change: baseChange * (0.8 + Math.random() * 0.4),
+          changePercent: baseChangePercent * (0.8 + Math.random() * 0.4),
+          open: baseOpen + spread,
+          high: baseHigh + spread,
+          low: baseLow + spread,
+          volume: Math.floor(baseVolume * (0.3 + Math.random() * 0.4)),
           lastUpdated: new Date().toISOString(),
         });
       }
@@ -132,12 +147,27 @@ async function fetchFeederCattleFutures(): Promise<FuturesContract[]> {
 
     const frontMonthData = await fetchYahooQuote("GF=F");
 
-    if (frontMonthData) {
+    if (frontMonthData && frontMonthData.lastPrice !== undefined) {
+      const basePrice = frontMonthData.lastPrice;
+      const baseChange = frontMonthData.change ?? 0;
+      const baseChangePercent = frontMonthData.changePercent ?? 0;
+      const baseOpen = frontMonthData.open ?? basePrice;
+      const baseHigh = frontMonthData.high ?? basePrice;
+      const baseLow = frontMonthData.low ?? basePrice;
+      const baseVolume = frontMonthData.volume ?? 0;
+
       contracts.push({
-        ...frontMonthData,
         symbol: symbols[0] || "GF",
         name: "Feeder Cattle",
         contractMonth: getContractMonth(symbols[0]),
+        lastPrice: basePrice,
+        change: baseChange,
+        changePercent: baseChangePercent,
+        open: baseOpen,
+        high: baseHigh,
+        low: baseLow,
+        volume: baseVolume,
+        lastUpdated: frontMonthData.lastUpdated || new Date().toISOString(),
       });
 
       for (let i = 1; i < Math.min(4, symbols.length); i++) {
@@ -146,13 +176,13 @@ async function fetchFeederCattleFutures(): Promise<FuturesContract[]> {
           symbol: symbols[i],
           name: "Feeder Cattle",
           contractMonth: getContractMonth(symbols[i]),
-          lastPrice: frontMonthData.lastPrice + spread,
-          change: frontMonthData.change * (0.8 + Math.random() * 0.4),
-          changePercent: frontMonthData.changePercent * (0.8 + Math.random() * 0.4),
-          open: frontMonthData.open + spread,
-          high: frontMonthData.high + spread,
-          low: frontMonthData.low + spread,
-          volume: Math.floor(frontMonthData.volume * (0.2 + Math.random() * 0.3)),
+          lastPrice: basePrice + spread,
+          change: baseChange * (0.8 + Math.random() * 0.4),
+          changePercent: baseChangePercent * (0.8 + Math.random() * 0.4),
+          open: baseOpen + spread,
+          high: baseHigh + spread,
+          low: baseLow + spread,
+          volume: Math.floor(baseVolume * (0.2 + Math.random() * 0.3)),
           lastUpdated: new Date().toISOString(),
         });
       }
