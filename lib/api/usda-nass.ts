@@ -15,11 +15,7 @@ import { SlaughterData } from "../types";
 const NASS_API_BASE = "https://quickstats.nass.usda.gov/api/api_GET";
 
 function getApiKey(): string {
-  const key = process.env.USDA_NASS_API_KEY;
-  if (!key) {
-    console.warn("USDA_NASS_API_KEY not set");
-  }
-  return key || "";
+  return process.env.USDA_NASS_API_KEY || "";
 }
 
 interface NASSQueryParams {

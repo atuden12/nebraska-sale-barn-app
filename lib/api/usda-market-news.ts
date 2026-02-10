@@ -17,13 +17,9 @@ import { AuctionReport, AuctionSale, CashPrice, CashPriceReport } from "../types
 
 const USDA_API_BASE = "https://marsapi.ams.usda.gov/services/v1.2";
 
-// Helper to get API key
+// Helper to get API key (optional - USDA MARS API works without auth)
 function getApiKey(): string {
-  const key = process.env.USDA_MARKET_NEWS_API_KEY;
-  if (!key) {
-    console.warn("USDA_MARKET_NEWS_API_KEY not set, using public endpoints");
-  }
-  return key || "";
+  return process.env.USDA_MARKET_NEWS_API_KEY || "";
 }
 
 // Generic fetch with error handling and caching
