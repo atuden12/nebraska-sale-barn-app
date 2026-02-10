@@ -10,14 +10,16 @@ export async function GET() {
 
     // If no real data, return demo data
     if (!reports || reports.length === 0) {
+      console.log("[v0] Auctions: Falling back to DEMO data");
       const demoData = getDemoAuctionData();
       return NextResponse.json({
         data: demoData,
-        error: null,
+        error: "Using demo data - live feed unavailable",
         lastUpdated: new Date().toISOString(),
       } as ApiResponse<AuctionReport[]>);
     }
 
+    console.log("[v0] Auctions: Returning LIVE data with", reports.length, "reports");
     return NextResponse.json({
       data: reports,
       error: null,

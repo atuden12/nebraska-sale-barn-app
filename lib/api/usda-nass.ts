@@ -154,9 +154,8 @@ export async function fetchCattleInventory(): Promise<any[]> {
 }
 
 // Alternative: Fetch from USDA LMPR (Livestock Mandatory Price Reporting)
-// This often has more current slaughter data
+// LM_CT100 = 5 Area Daily Weighted Average Direct Slaughter Cattle - Negotiated
 export async function fetchLMPRSlaughter(): Promise<SlaughterData[]> {
-  // LMPR endpoint for weekly slaughter summary
   const url = "https://marsapi.ams.usda.gov/services/v1.2/reports/lm_ct100";
 
   try {
@@ -166,7 +165,6 @@ export async function fetchLMPRSlaughter(): Promise<SlaughterData[]> {
     };
 
     if (apiKey) {
-      // USDA MARS API uses HTTP Basic Auth with the API key as username and no password
       const encoded = Buffer.from(`${apiKey}:`).toString("base64");
       headers["Authorization"] = `Basic ${encoded}`;
     }
@@ -177,22 +175,28 @@ export async function fetchLMPRSlaughter(): Promise<SlaughterData[]> {
     });
 
     if (!response.ok) {
+      console.log("[v0] LMPR (LM_CT100): HTTP error", response.status, response.statusText);
       return [];
     }
 
-    const data = await response.json();
+    const rawData = await response.json();
+    const data = Array.isArray(rawData) ? rawData : rawData?.results;
 
-    if (!Array.isArray(data)) {
+    if (!data || !Array.isArray(data) || data.length === 0) {
+      console.log("[v0] LMPR (LM_CT100): No results. Raw type:", typeof rawData, "keys:", rawData ? Object.keys(rawData) : "null");
       return [];
     }
+
+    console.log("[v0] LMPR (LM_CT100): Got", data.length, "records. First record keys:", Object.keys(data[0]));
+    console.log("[v0] LMPR sample record:", JSON.stringify(data[0]).substring(0, 500));
 
     return data.slice(0, 8).map((item: any, index: number) => {
       const currentValue =
-        parseInt(item.current_week_slaughter || item.head_count) || 0;
+        parseInt(item.current_week_slaughter || item.head_count || item.total_head || "0") || 0;
       const prevWeek =
-        parseInt(item.previous_week_slaughter || item.prev_week) || currentValue;
+        parseInt(item.previous_week_slaughter || item.prev_week || "0") || currentValue;
       const prevYear =
-        parseInt(item.year_ago_slaughter || item.prev_year) || currentValue;
+        parseInt(item.year_ago_slaughter || item.prev_year || "0") || currentValue;
 
       return {
         weekEnding: item.week_ending || item.report_date || "",

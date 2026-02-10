@@ -16,14 +16,16 @@ export async function GET() {
 
     // If still no data, return demo data
     if (!slaughterData || slaughterData.length === 0) {
+      console.log("[v0] Slaughter: Falling back to DEMO data");
       const demoData = getDemoSlaughterData();
       return NextResponse.json({
         data: demoData,
-        error: null,
+        error: "Using demo data - live feed unavailable",
         lastUpdated: new Date().toISOString(),
       } as ApiResponse<SlaughterData[]>);
     }
 
+    console.log("[v0] Slaughter: Returning LIVE data with", slaughterData.length, "records");
     return NextResponse.json({
       data: slaughterData,
       error: null,
