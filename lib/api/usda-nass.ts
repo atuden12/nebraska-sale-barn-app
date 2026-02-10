@@ -166,7 +166,9 @@ export async function fetchLMPRSlaughter(): Promise<SlaughterData[]> {
     };
 
     if (apiKey) {
-      headers["Authorization"] = apiKey;
+      // USDA MARS API uses HTTP Basic Auth with the API key as username and no password
+      const encoded = Buffer.from(`${apiKey}:`).toString("base64");
+      headers["Authorization"] = `Basic ${encoded}`;
     }
 
     const response = await fetch(url, {
