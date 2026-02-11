@@ -175,7 +175,6 @@ export async function fetchLMPRSlaughter(): Promise<SlaughterData[]> {
     });
 
     if (!response.ok) {
-      console.log("[v0] LMPR (LM_CT100): HTTP error", response.status, response.statusText);
       return [];
     }
 
@@ -183,12 +182,8 @@ export async function fetchLMPRSlaughter(): Promise<SlaughterData[]> {
     const data = Array.isArray(rawData) ? rawData : rawData?.results;
 
     if (!data || !Array.isArray(data) || data.length === 0) {
-      console.log("[v0] LMPR (LM_CT100): No results. Raw type:", typeof rawData, "keys:", rawData ? Object.keys(rawData) : "null");
       return [];
     }
-
-    console.log("[v0] LMPR (LM_CT100): Got", data.length, "records. First record keys:", Object.keys(data[0]));
-    console.log("[v0] LMPR sample record:", JSON.stringify(data[0]).substring(0, 500));
 
     return data.slice(0, 8).map((item: any, index: number) => {
       const currentValue =

@@ -19,7 +19,6 @@ export async function GET() {
 
     // If still no data, return demo data
     if (!priceReport || priceReport.prices.length === 0) {
-      console.log("[v0] Cash prices: Falling back to DEMO data");
       const demoData = getDemoCashPriceData();
       return NextResponse.json({
         data: demoData,
@@ -28,7 +27,6 @@ export async function GET() {
       } as ApiResponse<CashPriceReport>);
     }
 
-    console.log("[v0] Cash prices: Returning LIVE data with", priceReport.prices.length, "prices");
     return NextResponse.json({
       data: priceReport,
       error: null,

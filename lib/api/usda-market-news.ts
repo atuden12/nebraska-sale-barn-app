@@ -65,12 +65,8 @@ export async function fetchNebraskaDirectSlaughter(): Promise<CashPriceReport | 
   const results = Array.isArray(data) ? data : data?.results;
 
   if (!results || !Array.isArray(results) || results.length === 0) {
-    console.log("[v0] NE Direct Slaughter (LM_CT158): No results. Raw response type:", typeof data, "keys:", data ? Object.keys(data) : "null");
     return null;
   }
-
-  console.log("[v0] NE Direct Slaughter (LM_CT158): Got", results.length, "records. First record keys:", Object.keys(results[0]));
-  console.log("[v0] NE Direct Slaughter sample record:", JSON.stringify(results[0]).substring(0, 500));
 
   // Transform USDA data to our format
   const prices: CashPrice[] = results.slice(0, 50).map((item: any) => ({
@@ -88,7 +84,6 @@ export async function fetchNebraskaDirectSlaughter(): Promise<CashPriceReport | 
   }));
 
   const validPrices = prices.filter((p) => p.weightedAvgPrice > 0);
-  console.log("[v0] NE Direct Slaughter: Parsed", validPrices.length, "valid prices from", prices.length, "total");
 
   return {
     reportDate: results[0]?.report_date || new Date().toISOString(),
@@ -104,12 +99,8 @@ export async function fetch5AreaWeeklyPrices(): Promise<CashPriceReport | null> 
   const results = Array.isArray(data) ? data : data?.results;
 
   if (!results || !Array.isArray(results) || results.length === 0) {
-    console.log("[v0] 5-Area (LM_CT150): No results. Raw response type:", typeof data, "keys:", data ? Object.keys(data) : "null");
     return null;
   }
-
-  console.log("[v0] 5-Area (LM_CT150): Got", results.length, "records. First record keys:", Object.keys(results[0]));
-  console.log("[v0] 5-Area sample record:", JSON.stringify(results[0]).substring(0, 500));
 
   const prices: CashPrice[] = results.slice(0, 50).map((item: any) => ({
     reportDate: item.report_date || new Date().toISOString(),
@@ -125,7 +116,6 @@ export async function fetch5AreaWeeklyPrices(): Promise<CashPriceReport | null> 
   }));
 
   const validPrices = prices.filter((p) => p.weightedAvgPrice > 0);
-  console.log("[v0] 5-Area: Parsed", validPrices.length, "valid prices from", prices.length, "total");
 
   return {
     reportDate: results[0]?.report_date || new Date().toISOString(),
@@ -133,33 +123,37 @@ export async function fetch5AreaWeeklyPrices(): Promise<CashPriceReport | null> 
   };
 }
 
-// Nebraska Auction Market Reports
-export async function fetchNebraskaAuctions(): Promise<AuctionReport[]> {
-  // Real Nebraska auction report slugs from USDA MARS
-  const auctionSlugs = [
-    { slug: "1860", name: "Nebraska Weekly Livestock Auction Summary" },  // Multiple Markets
-    { slug: "1850", name: "Ogallala Livestock Auction" },
-  ];
+// Fetch auction reports for specific sale barns by slug.
+// If no slugs provided, defaults to the Nebraska Weekly Summary (1860).
+export async function fetchNebraskaAuctions(slugs?: string[]): Promise<AuctionReport[]> {
+  const { NEBRASKA_SALE_BARNS, getBarnsBySlugs } = await import("../sale-barns");
+
+  const barns =
+    slugs && slugs.length > 0
+      ? getBarnsBySlugs(slugs)
+      : [NEBRASKA_SALE_BARNS[0]]; // default to statewide summary
 
   const reports: AuctionReport[] = [];
 
-  for (const { slug, name } of auctionSlugs) {
-    const endpoint = `/reports/${slug}`;
-    const data = await fetchUSDA<any>(endpoint, 7200); // 2-hour cache for auctions
+  // Fetch all barns in parallel
+  const fetches = barns.map(async (barn) => {
+    const endpoint = `/reports/${barn.slug}`;
+    const data = await fetchUSDA<any>(endpoint, 7200);
+    return { barn, data };
+  });
 
-    const results = Array.isArray(data) ? data : data?.results;
+  const results = await Promise.all(fetches);
 
-    if (!results || !Array.isArray(results) || results.length === 0) {
-      console.log(`[v0] Auction (${slug} - ${name}): No results. Raw type:`, typeof data, "keys:", data ? Object.keys(data) : "null");
+  for (const { barn, data } of results) {
+    const records = Array.isArray(data) ? data : data?.results;
+
+    if (!records || !Array.isArray(records) || records.length === 0) {
       continue;
     }
 
-    console.log(`[v0] Auction (${slug} - ${name}): Got`, results.length, "records. First record keys:", Object.keys(results[0]));
-    console.log(`[v0] Auction (${slug}) sample record:`, JSON.stringify(results[0]).substring(0, 500));
-
-    const sales: AuctionSale[] = results.slice(0, 50).map((item: any) => ({
+    const sales: AuctionSale[] = records.slice(0, 100).map((item: any) => ({
       reportDate: item.report_date || new Date().toISOString(),
-      marketLocation: item.market_location || item.market || item.city || name,
+      marketLocation: item.market_location || item.market || item.city || barn.city,
       headCount: parseInt(item.head_count || item.total_head || "0") || 0,
       avgPrice: parseFloat(item.wtd_avg || item.avg_price || item.weighted_average || "0") || 0,
       priceRange: {
@@ -176,16 +170,15 @@ export async function fetchNebraskaAuctions(): Promise<AuctionReport[]> {
     }));
 
     const validSales = sales.filter((s) => s.avgPrice > 0);
-    console.log(`[v0] Auction (${slug}): Parsed`, validSales.length, "valid sales from", sales.length, "total");
 
     if (validSales.length > 0) {
       reports.push({
-        reportDate: results[0]?.report_date || new Date().toISOString(),
-        reportTitle: results[0]?.report_title || name,
-        marketName: results[0]?.market_location || name,
+        reportDate: records[0]?.report_date || new Date().toISOString(),
+        reportTitle: records[0]?.report_title || barn.name,
+        marketName: barn.name,
         totalHeadCount: validSales.reduce((sum, s) => sum + s.headCount, 0),
         sales: validSales,
-        commentary: results[0]?.market_comments || results[0]?.narrative,
+        commentary: records[0]?.market_comments || records[0]?.narrative,
       });
     }
   }

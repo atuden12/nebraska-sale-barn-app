@@ -1,16 +1,21 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { fetchNebraskaAuctions } from "@/lib/api/usda-market-news";
 import { ApiResponse, AuctionReport } from "@/lib/types";
 
 export const revalidate = 7200; // 2 hours
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const reports = await fetchNebraskaAuctions();
+    // Accept ?barns=1860,1850,1857 query param
+    const barnsParam = request.nextUrl.searchParams.get("barns");
+    const slugs = barnsParam
+      ? barnsParam.split(",").map((s) => s.trim()).filter(Boolean)
+      : undefined;
+
+    const reports = await fetchNebraskaAuctions(slugs);
 
     // If no real data, return demo data
     if (!reports || reports.length === 0) {
-      console.log("[v0] Auctions: Falling back to DEMO data");
       const demoData = getDemoAuctionData();
       return NextResponse.json({
         data: demoData,
@@ -19,7 +24,6 @@ export async function GET() {
       } as ApiResponse<AuctionReport[]>);
     }
 
-    console.log("[v0] Auctions: Returning LIVE data with", reports.length, "reports");
     return NextResponse.json({
       data: reports,
       error: null,
