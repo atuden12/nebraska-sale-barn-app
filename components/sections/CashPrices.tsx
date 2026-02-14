@@ -2,7 +2,9 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { format } from "date-fns";
-import { DollarSign, Scale, Users } from "lucide-react";
+import Link from "next/link";
+import { DollarSign, Scale, Users, ChevronRight } from "lucide-react";
+import { toSlug } from "@/lib/slugs";
 import {
   Card,
   CardHeader,
@@ -159,7 +161,15 @@ export function CashPrices({ initialData }: CashPricesProps) {
                       <tbody className="divide-y divide-gray-100">
                         {prices.slice(0, 5).map((price, index) => (
                           <tr key={index} className="hover:bg-gray-50 transition-colors">
-                            <td className="px-3 py-2 text-gray-900">{price.region}</td>
+                            <td className="px-3 py-2">
+                              <Link
+                                href={`/reports/cash/${toSlug(price.region)}`}
+                                className="inline-flex items-center gap-1 text-gray-900 font-medium hover:text-cornhusker-600 transition-colors group"
+                              >
+                                {price.region}
+                                <ChevronRight className="w-3.5 h-3.5 text-gray-400 group-hover:text-cornhusker-500 transition-colors" />
+                              </Link>
+                            </td>
                             <td className="px-3 py-2 text-right text-gray-600">
                               {price.headCount.toLocaleString()}
                             </td>

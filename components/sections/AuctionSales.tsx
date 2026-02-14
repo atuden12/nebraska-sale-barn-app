@@ -2,7 +2,9 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { format } from "date-fns";
-import { Gavel, MapPin, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import Link from "next/link";
+import { Gavel, MapPin, TrendingUp, TrendingDown, Minus, ChevronRight } from "lucide-react";
+import { toSlug } from "@/lib/slugs";
 import {
   Card,
   CardHeader,
@@ -106,10 +108,16 @@ export function AuctionSales({ initialData }: AuctionSalesProps) {
             {reports.map((report, reportIndex) => (
               <div key={reportIndex} className="border-b border-gray-100 last:border-0">
                 <div className="px-4 py-3 bg-gray-50 flex flex-wrap items-center gap-2 sm:gap-4">
-                  <div className="flex items-center gap-2">
+                  <Link
+                    href={`/reports/auction/${toSlug(report.marketName)}`}
+                    className="flex items-center gap-2 group"
+                  >
                     <MapPin className="w-4 h-4 text-gray-400" />
-                    <span className="font-medium text-gray-900">{report.marketName}</span>
-                  </div>
+                    <span className="font-medium text-gray-900 group-hover:text-cornhusker-600 transition-colors">
+                      {report.marketName}
+                    </span>
+                    <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-cornhusker-500 transition-colors" />
+                  </Link>
                   <span className="text-sm text-gray-500">
                     {report.reportDate
                       ? format(new Date(report.reportDate), "MMM d, yyyy")
