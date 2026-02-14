@@ -2,7 +2,15 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { format } from "date-fns";
-import { Gavel, MapPin, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import {
+  Gavel,
+  MapPin,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+  BarChart3,
+  List,
+} from "lucide-react";
 import {
   Card,
   CardHeader,
@@ -15,24 +23,39 @@ import {
   ErrorMessage,
   NoDataMessage,
 } from "../ui";
-import { AuctionReport, AuctionSale } from "@/lib/types";
+import { BarnSelector } from "./BarnSelector";
+import { AuctionComparison } from "./AuctionComparison";
+import { AuctionReport, SaleBarn } from "@/lib/types";
 
-interface AuctionSalesProps {
-  initialData?: AuctionReport[];
-}
+type ViewMode = "barns" | "compare";
 
-export function AuctionSales({ initialData }: AuctionSalesProps) {
-  const [reports, setReports] = useState<AuctionReport[]>(initialData || []);
-  const [loading, setLoading] = useState(!initialData);
+export function AuctionSales() {
+  const [reports, setReports] = useState<AuctionReport[]>([]);
+  const [barns, setBarns] = useState<SaleBarn[]>([]);
+  const [selectedSlugs, setSelectedSlugs] = useState<string[]>(["1860"]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [view, setView] = useState<ViewMode>("barns");
 
-  const fetchData = useCallback(async () => {
+  // Load barn list on mount
+  useEffect(() => {
+    fetch("/api/barns")
+      .then((r) => r.json())
+      .then((d) => setBarns(d.barns || []))
+      .catch(() => {});
+  }, []);
+
+  const fetchData = useCallback(async (slugs: string[]) => {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch("/api/auctions");
+      const params = slugs.length > 0 ? `?barns=${slugs.join(",")}` : "";
+      const response = await fetch(`/api/auctions${params}`);
       if (!response.ok) throw new Error("Failed to fetch auction data");
       const data = await response.json();
+      if (data.error && data.error.includes("demo")) {
+        setError(data.error);
+      }
       setReports(data.data || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred");
@@ -41,14 +64,19 @@ export function AuctionSales({ initialData }: AuctionSalesProps) {
     }
   }, []);
 
+  // Fetch when selected barns change
   useEffect(() => {
-    if (!initialData) {
-      fetchData();
-    }
-  }, [initialData, fetchData]);
+    fetchData(selectedSlugs);
+  }, [selectedSlugs, fetchData]);
 
-  const handleRefresh = async () => {
-    await fetchData();
+  const handleRefresh = () => fetchData(selectedSlugs);
+
+  const handleBarnChange = (slugs: string[]) => {
+    setSelectedSlugs(slugs);
+    // Auto-switch to compare view when 2+ barns are selected
+    if (slugs.length >= 2 && view === "barns") {
+      setView("compare");
+    }
   };
 
   const getTrendIcon = (trend?: string) => {
@@ -77,9 +105,7 @@ export function AuctionSales({ initialData }: AuctionSalesProps) {
 
   return (
     <Card id="auctions">
-      <CardHeader
-        action={<RefreshButton onRefresh={handleRefresh} />}
-      >
+      <CardHeader action={<RefreshButton onRefresh={handleRefresh} />}>
         <div className="flex items-center gap-2">
           <div className="p-2 bg-prairie-100 rounded-lg">
             <Gavel className="w-5 h-5 text-prairie-600" />
@@ -87,35 +113,95 @@ export function AuctionSales({ initialData }: AuctionSalesProps) {
           <div>
             <CardTitle>Nebraska Auction Sales</CardTitle>
             <CardDescription>
-              Weekly livestock auction summaries from Nebraska sale barns
+              Select sale barns to view and compare livestock auction results
             </CardDescription>
           </div>
         </div>
       </CardHeader>
+
+      {/* Barn selector and view toggle */}
+      <div className="px-4 py-3 sm:px-6 border-b border-gray-100 bg-gray-50/50">
+        <div className="flex flex-col sm:flex-row sm:items-start gap-3">
+          <div className="flex-1">
+            <BarnSelector
+              barns={barns}
+              selected={selectedSlugs}
+              onChange={handleBarnChange}
+            />
+          </div>
+
+          {/* View toggle */}
+          <div className="flex items-center bg-white border border-gray-200 rounded-lg overflow-hidden shrink-0">
+            <button
+              type="button"
+              onClick={() => setView("barns")}
+              className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors ${
+                view === "barns"
+                  ? "bg-cornhusker-600 text-white"
+                  : "text-gray-600 hover:bg-gray-50"
+              }`}
+            >
+              <List className="w-3.5 h-3.5" />
+              By Barn
+            </button>
+            <button
+              type="button"
+              onClick={() => setView("compare")}
+              className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors ${
+                view === "compare"
+                  ? "bg-cornhusker-600 text-white"
+                  : "text-gray-600 hover:bg-gray-50"
+              }`}
+            >
+              <BarChart3 className="w-3.5 h-3.5" />
+              Compare
+            </button>
+          </div>
+        </div>
+      </div>
+
       <CardContent className="p-0">
         {loading ? (
           <div className="p-6">
             <TableSkeleton rows={6} cols={5} />
           </div>
-        ) : error ? (
-          <ErrorMessage message={error} onRetry={fetchData} />
+        ) : error && reports.length === 0 ? (
+          <ErrorMessage message={error} onRetry={handleRefresh} />
+        ) : selectedSlugs.length === 0 ? (
+          <NoDataMessage message="Select one or more sale barns above to view auction data." />
         ) : reports.length === 0 ? (
-          <NoDataMessage message="No auction reports available. Check back after auction day." />
+          <NoDataMessage message="No auction reports available for the selected barns. Check back after sale day." />
+        ) : view === "compare" ? (
+          <div className="p-4 sm:p-6">
+            <AuctionComparison reports={reports} />
+          </div>
         ) : (
           <div className="overflow-x-auto custom-scrollbar">
+            {error && (
+              <div className="px-4 py-2 bg-prairie-50 text-prairie-700 text-xs border-b border-prairie-100">
+                {error}
+              </div>
+            )}
             {reports.map((report, reportIndex) => (
-              <div key={reportIndex} className="border-b border-gray-100 last:border-0">
+              <div
+                key={reportIndex}
+                className="border-b border-gray-100 last:border-0"
+              >
                 <div className="px-4 py-3 bg-gray-50 flex flex-wrap items-center gap-2 sm:gap-4">
                   <div className="flex items-center gap-2">
                     <MapPin className="w-4 h-4 text-gray-400" />
-                    <span className="font-medium text-gray-900">{report.marketName}</span>
+                    <span className="font-medium text-gray-900">
+                      {report.marketName}
+                    </span>
                   </div>
                   <span className="text-sm text-gray-500">
                     {report.reportDate
                       ? format(new Date(report.reportDate), "MMM d, yyyy")
                       : "Recent"}
                   </span>
-                  <Badge variant="info">{report.totalHeadCount.toLocaleString()} head</Badge>
+                  <Badge variant="info">
+                    {report.totalHeadCount.toLocaleString()} head
+                  </Badge>
                 </div>
                 <table className="w-full min-w-[600px]">
                   <thead>
@@ -129,8 +215,11 @@ export function AuctionSales({ initialData }: AuctionSalesProps) {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {report.sales.slice(0, 10).map((sale, saleIndex) => (
-                      <tr key={saleIndex} className="hover:bg-gray-50 transition-colors">
+                    {report.sales.slice(0, 15).map((sale, saleIndex) => (
+                      <tr
+                        key={saleIndex}
+                        className="hover:bg-gray-50 transition-colors"
+                      >
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
                             <span className="font-medium text-gray-900">

@@ -19,7 +19,7 @@ export async function GET() {
       const demoData = getDemoSlaughterData();
       return NextResponse.json({
         data: demoData,
-        error: null,
+        error: "Using demo data - live feed unavailable",
         lastUpdated: new Date().toISOString(),
       } as ApiResponse<SlaughterData[]>);
     }

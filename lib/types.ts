@@ -1,3 +1,13 @@
+// Sale Barn definition
+export interface SaleBarn {
+  slug: string;
+  name: string;
+  city: string;
+  state: string;
+  saleDay: string; // e.g. "Thursday", "Wednesday"
+  reportDay: string; // Day the USDA report is posted
+}
+
 // USDA Market News Report Types
 export interface AuctionSale {
   reportDate: string;

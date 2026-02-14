@@ -4,26 +4,22 @@
  * Documentation: https://mymarketnews.ams.usda.gov/mymarketnews-api
  *
  * Key Report Slugs for Nebraska Cattle:
- * - LM_CT155: Nebraska Weekly Direct Slaughter Cattle
- * - LM_CT169: 5-Area Weekly Weighted Average Direct Slaughter Cattle
- * - LM_CT150: National Weekly Direct Slaughter Cattle
- * - LM_XB459: Nebraska Auction Prices
+ * - LM_CT158: Nebraska Weekly Direct Slaughter Cattle - Negotiated Purchases
+ * - LM_CT165: Nebraska Weekly Weighted Average Direct Slaughter Cattle - Negotiated
+ * - LM_CT150: 5 Area Weekly Weighted Average Direct Slaughter Cattle
  *
  * Auction Report Slugs:
- * - Various Nebraska auction markets have individual slugs
+ * - AMS_1860 (1860): Nebraska Weekly Livestock Auction Summary (Multiple Markets)
+ * - AMS_1850 (1850): Ogallala Livestock Auction
  */
 
 import { AuctionReport, AuctionSale, CashPrice, CashPriceReport } from "../types";
 
 const USDA_API_BASE = "https://marsapi.ams.usda.gov/services/v1.2";
 
-// Helper to get API key
+// Helper to get API key (optional - USDA MARS API works without auth)
 function getApiKey(): string {
-  const key = process.env.USDA_MARKET_NEWS_API_KEY;
-  if (!key) {
-    console.warn("USDA_MARKET_NEWS_API_KEY not set, using public endpoints");
-  }
-  return key || "";
+  return process.env.USDA_MARKET_NEWS_API_KEY || "";
 }
 
 // Generic fetch with error handling and caching
@@ -37,7 +33,9 @@ async function fetchUSDA<T>(
   };
 
   if (apiKey) {
-    headers["Authorization"] = apiKey;
+    // USDA MARS API uses HTTP Basic Auth with the API key as username and no password
+    const encoded = Buffer.from(`${apiKey}:`).toString("base64");
+    headers["Authorization"] = `Basic ${encoded}`;
   }
 
   try {
@@ -58,107 +56,130 @@ async function fetchUSDA<T>(
   }
 }
 
-// Nebraska Weekly Direct Slaughter Cattle Report (LM_CT155)
+// Nebraska Weekly Direct Slaughter Cattle - Negotiated Purchases (LM_CT158)
 export async function fetchNebraskaDirectSlaughter(): Promise<CashPriceReport | null> {
-  const endpoint = "/reports/lm_ct155";
-  const data = await fetchUSDA<any[]>(endpoint, 3600);
+  const endpoint = "/reports/lm_ct158";
+  const data = await fetchUSDA<any>(endpoint, 3600);
 
-  if (!data || !Array.isArray(data)) {
+  // MARS API wraps results in a "results" array
+  const results = Array.isArray(data) ? data : data?.results;
+
+  if (!results || !Array.isArray(results) || results.length === 0) {
     return null;
   }
 
   // Transform USDA data to our format
-  const prices: CashPrice[] = data.slice(0, 20).map((item) => ({
+  const prices: CashPrice[] = results.slice(0, 50).map((item: any) => ({
     reportDate: item.report_date || item.published_date || new Date().toISOString(),
-    priceType: mapPriceType(item.price_type || item.purchase_type),
+    priceType: mapPriceType(item.purchase_type || item.price_type || ""),
     region: "Nebraska",
-    headCount: parseInt(item.head_count || item.total_head) || 0,
-    weightedAvgPrice: parseFloat(item.wtd_avg_price || item.weighted_average) || 0,
+    headCount: parseInt(item.head_count || item.total_head || "0") || 0,
+    weightedAvgPrice: parseFloat(item.wtd_avg || item.wtd_avg_price || item.weighted_average || "0") || 0,
     priceRange: {
-      low: parseFloat(item.price_low || item.low_price) || 0,
-      high: parseFloat(item.price_high || item.high_price) || 0,
+      low: parseFloat(item.price_low || item.low_price || "0") || 0,
+      high: parseFloat(item.price_high || item.high_price || "0") || 0,
     },
-    avgWeight: parseFloat(item.avg_weight || item.average_weight) || 0,
-    dressedBasis: parseFloat(item.dressed_basis) || undefined,
+    avgWeight: parseFloat(item.avg_weight || item.average_weight || "0") || 0,
+    dressedBasis: parseFloat(item.dressed_basis || "0") || undefined,
   }));
 
+  const validPrices = prices.filter((p) => p.weightedAvgPrice > 0);
+
   return {
-    reportDate: data[0]?.report_date || new Date().toISOString(),
-    prices: prices.filter((p) => p.weightedAvgPrice > 0),
+    reportDate: results[0]?.report_date || new Date().toISOString(),
+    prices: validPrices,
   };
 }
 
-// 5-Area Weekly Weighted Average (LM_CT169)
+// 5 Area Weekly Weighted Average Direct Slaughter Cattle (LM_CT150)
 export async function fetch5AreaWeeklyPrices(): Promise<CashPriceReport | null> {
-  const endpoint = "/reports/lm_ct169";
-  const data = await fetchUSDA<any[]>(endpoint, 3600);
+  const endpoint = "/reports/lm_ct150";
+  const data = await fetchUSDA<any>(endpoint, 3600);
 
-  if (!data || !Array.isArray(data)) {
+  const results = Array.isArray(data) ? data : data?.results;
+
+  if (!results || !Array.isArray(results) || results.length === 0) {
     return null;
   }
 
-  const prices: CashPrice[] = data.slice(0, 30).map((item) => ({
+  const prices: CashPrice[] = results.slice(0, 50).map((item: any) => ({
     reportDate: item.report_date || new Date().toISOString(),
-    priceType: mapPriceType(item.purchase_type || item.price_type),
+    priceType: mapPriceType(item.purchase_type || item.price_type || ""),
     region: item.region || "5-Area",
-    headCount: parseInt(item.head_count) || 0,
-    weightedAvgPrice: parseFloat(item.wtd_avg) || parseFloat(item.weighted_average) || 0,
+    headCount: parseInt(item.head_count || "0") || 0,
+    weightedAvgPrice: parseFloat(item.wtd_avg || item.wtd_avg_price || item.weighted_average || "0") || 0,
     priceRange: {
-      low: parseFloat(item.price_low) || 0,
-      high: parseFloat(item.price_high) || 0,
+      low: parseFloat(item.price_low || "0") || 0,
+      high: parseFloat(item.price_high || "0") || 0,
     },
-    avgWeight: parseFloat(item.avg_weight) || 0,
+    avgWeight: parseFloat(item.avg_weight || "0") || 0,
   }));
 
+  const validPrices = prices.filter((p) => p.weightedAvgPrice > 0);
+
   return {
-    reportDate: data[0]?.report_date || new Date().toISOString(),
-    prices: prices.filter((p) => p.weightedAvgPrice > 0),
+    reportDate: results[0]?.report_date || new Date().toISOString(),
+    prices: validPrices,
   };
 }
 
-// Nebraska Auction Market Reports
-export async function fetchNebraskaAuctions(): Promise<AuctionReport[]> {
-  // Nebraska auction markets - we'll try multiple report slugs
-  const auctionSlugs = [
-    "lm_ct758", // Nebraska Auction Summary
-    "lm_ct712", // North Central Nebraska
-  ];
+// Fetch auction reports for specific sale barns by slug.
+// If no slugs provided, defaults to the Nebraska Weekly Summary (1860).
+export async function fetchNebraskaAuctions(slugs?: string[]): Promise<AuctionReport[]> {
+  const { NEBRASKA_SALE_BARNS, getBarnsBySlugs } = await import("../sale-barns");
+
+  const barns =
+    slugs && slugs.length > 0
+      ? getBarnsBySlugs(slugs)
+      : [NEBRASKA_SALE_BARNS[0]]; // default to statewide summary
 
   const reports: AuctionReport[] = [];
 
-  for (const slug of auctionSlugs) {
-    const endpoint = `/reports/${slug}`;
-    const data = await fetchUSDA<any[]>(endpoint, 7200); // 2-hour cache for auctions
+  // Fetch all barns in parallel
+  const fetches = barns.map(async (barn) => {
+    const endpoint = `/reports/${barn.slug}`;
+    const data = await fetchUSDA<any>(endpoint, 7200);
+    return { barn, data };
+  });
 
-    if (data && Array.isArray(data) && data.length > 0) {
-      const sales: AuctionSale[] = data.slice(0, 50).map((item) => ({
-        reportDate: item.report_date || new Date().toISOString(),
-        marketLocation: item.market_location || item.market || "Nebraska",
-        headCount: parseInt(item.head_count || item.total_head) || 0,
-        avgPrice: parseFloat(item.avg_price || item.weighted_average) || 0,
-        priceRange: {
-          low: parseFloat(item.price_low || item.low) || 0,
-          high: parseFloat(item.price_high || item.high) || 0,
-        },
-        weightRange: {
-          low: parseFloat(item.weight_low || item.low_weight) || 0,
-          high: parseFloat(item.weight_high || item.high_weight) || 0,
-        },
-        category: item.class || item.category || "Mixed",
-        grade: item.grade || item.quality_grade,
-        trend: mapTrend(item.price_trend || item.trend),
-      }));
+  const results = await Promise.all(fetches);
 
-      if (sales.length > 0) {
-        reports.push({
-          reportDate: data[0]?.report_date || new Date().toISOString(),
-          reportTitle: data[0]?.report_title || `Nebraska Auction (${slug})`,
-          marketName: data[0]?.market_location || "Nebraska",
-          totalHeadCount: sales.reduce((sum, s) => sum + s.headCount, 0),
-          sales: sales.filter((s) => s.avgPrice > 0),
-          commentary: data[0]?.market_comments,
-        });
-      }
+  for (const { barn, data } of results) {
+    const records = Array.isArray(data) ? data : data?.results;
+
+    if (!records || !Array.isArray(records) || records.length === 0) {
+      continue;
+    }
+
+    const sales: AuctionSale[] = records.slice(0, 100).map((item: any) => ({
+      reportDate: item.report_date || new Date().toISOString(),
+      marketLocation: item.market_location || item.market || item.city || barn.city,
+      headCount: parseInt(item.head_count || item.total_head || "0") || 0,
+      avgPrice: parseFloat(item.wtd_avg || item.avg_price || item.weighted_average || "0") || 0,
+      priceRange: {
+        low: parseFloat(item.price_low || item.low_price || "0") || 0,
+        high: parseFloat(item.price_high || item.high_price || "0") || 0,
+      },
+      weightRange: {
+        low: parseFloat(item.weight_low || item.low_weight || item.avg_weight || "0") || 0,
+        high: parseFloat(item.weight_high || item.high_weight || item.avg_weight || "0") || 0,
+      },
+      category: item.class || item.commodity || item.category || "Mixed",
+      grade: item.grade || item.quality_grade || item.frame_size,
+      trend: mapTrend(item.price_trend || item.trend || ""),
+    }));
+
+    const validSales = sales.filter((s) => s.avgPrice > 0);
+
+    if (validSales.length > 0) {
+      reports.push({
+        reportDate: records[0]?.report_date || new Date().toISOString(),
+        reportTitle: records[0]?.report_title || barn.name,
+        marketName: barn.name,
+        totalHeadCount: validSales.reduce((sum, s) => sum + s.headCount, 0),
+        sales: validSales,
+        commentary: records[0]?.market_comments || records[0]?.narrative,
+      });
     }
   }
 

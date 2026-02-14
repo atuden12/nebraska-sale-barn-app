@@ -22,7 +22,7 @@ export async function GET() {
       const demoData = getDemoCashPriceData();
       return NextResponse.json({
         data: demoData,
-        error: null,
+        error: "Using demo data - live feed unavailable",
         lastUpdated: new Date().toISOString(),
       } as ApiResponse<CashPriceReport>);
     }

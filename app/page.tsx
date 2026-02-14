@@ -170,13 +170,13 @@ export default function DashboardPage() {
         <h3 className="text-sm font-medium text-gray-700 mb-2">Data Sources</h3>
         <ul className="text-xs text-gray-500 space-y-1">
           <li>
-            • <strong>Auction Sales:</strong> USDA AMS MyMarketNews (LM_CT758, LM_CT712)
+            • <strong>Auction Sales:</strong> USDA AMS MyMarketNews - Nebraska Livestock Auctions
           </li>
           <li>
             • <strong>Slaughter Numbers:</strong> USDA NASS & LMPR (LM_CT100)
           </li>
           <li>
-            • <strong>Cash Prices:</strong> USDA AMS Nebraska Direct Slaughter (LM_CT155)
+            • <strong>Cash Prices:</strong> USDA AMS Nebraska Direct Slaughter (LM_CT158, LM_CT150)
           </li>
           <li>
             • <strong>Futures:</strong> CME Group (delayed quotes via public feeds)
