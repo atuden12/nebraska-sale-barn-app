@@ -53,7 +53,7 @@ async function fetchNASS<T>(params: NASSQueryParams): Promise<T | null> {
 
   try {
     const url = `${NASS_API_BASE}?${queryParams.toString()}`;
-    console.log("[v0] Fetching NASS data:", params.statisticcat_desc, params.state_name || "NATIONAL");
+    console.log("[v0] NASS fetch:", params.statisticcat_desc, params.state_name || "NATIONAL", "| key present:", !!apiKey, "| at:", new Date().toISOString());
     const response = await fetch(url, {
       cache: "no-store",
     });
@@ -168,7 +168,7 @@ export async function fetchLMPRSlaughter(): Promise<SlaughterData[]> {
   const url = "https://marsapi.ams.usda.gov/services/v1.2/reports/3237";
 
   try {
-    const apiKey = process.env.USDA_MARKET_NEWS_API_KEY;
+    const apiKey = process.env.USDA_MARKET_NEWS_API_KEY?.trim();
     const headers: HeadersInit = {
       Accept: "application/json",
     };
@@ -179,7 +179,7 @@ export async function fetchLMPRSlaughter(): Promise<SlaughterData[]> {
       headers["Authorization"] = `Basic ${encoded}`;
     }
 
-    console.log("[v0] Fetching LMPR slaughter data from MARS API");
+    console.log("[v0] Fetching LMPR slaughter from:", url, "key present:", !!apiKey);
     const response = await fetch(url, {
       headers,
       cache: "no-store",

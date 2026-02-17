@@ -43,7 +43,7 @@ async function fetchUSDA<T>(
 
   try {
     const url = `${USDA_API_BASE}${endpoint}`;
-    console.log("[v0] Fetching USDA Market News:", url);
+    console.log("[v0] MARS fetch:", url, "| auth:", !!apiKey);
     const response = await fetch(url, {
       headers,
       cache: "no-store",
