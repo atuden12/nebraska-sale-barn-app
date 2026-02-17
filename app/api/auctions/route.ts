@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { fetchNebraskaAuctions } from "@/lib/api/usda-market-news";
 import { ApiResponse, AuctionReport } from "@/lib/types";
 
-export const revalidate = 7200; // 2 hours
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {

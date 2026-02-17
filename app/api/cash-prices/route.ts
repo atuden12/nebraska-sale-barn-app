@@ -5,7 +5,7 @@ import {
 } from "@/lib/api/usda-market-news";
 import { ApiResponse, CashPriceReport, CashPrice } from "@/lib/types";
 
-export const revalidate = 3600; // 1 hour
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {

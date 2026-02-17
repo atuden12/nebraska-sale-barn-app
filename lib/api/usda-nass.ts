@@ -15,7 +15,7 @@ import { SlaughterData } from "../types";
 const NASS_API_BASE = "https://quickstats.nass.usda.gov/api/api_GET";
 
 function getApiKey(): string {
-  const key = process.env.USDA_NASS_API_KEY;
+  const key = process.env.USDA_NASS_API_KEY?.trim();
   if (!key) {
     console.warn("USDA_NASS_API_KEY not set");
   }
@@ -55,7 +55,7 @@ async function fetchNASS<T>(params: NASSQueryParams): Promise<T | null> {
     const url = `${NASS_API_BASE}?${queryParams.toString()}`;
     console.log("[v0] Fetching NASS data:", params.statisticcat_desc, params.state_name || "NATIONAL");
     const response = await fetch(url, {
-      next: { revalidate: 86400 }, // Daily cache for NASS data
+      cache: "no-store",
     });
 
     if (!response.ok) {
@@ -164,8 +164,8 @@ export async function fetchCattleInventory(): Promise<any[]> {
 // Alternative: Fetch from USDA LMPR (Livestock Mandatory Price Reporting)
 // This often has more current slaughter data
 export async function fetchLMPRSlaughter(): Promise<SlaughterData[]> {
-  // LMPR endpoint for weekly slaughter summary
-  const url = "https://marsapi.ams.usda.gov/services/v1.2/reports/LM_CT100";
+  // Wyoming-Nebraska Direct Cattle Report (AMS_3237)
+  const url = "https://marsapi.ams.usda.gov/services/v1.2/reports/3237";
 
   try {
     const apiKey = process.env.USDA_MARKET_NEWS_API_KEY;
@@ -182,7 +182,7 @@ export async function fetchLMPRSlaughter(): Promise<SlaughterData[]> {
     console.log("[v0] Fetching LMPR slaughter data from MARS API");
     const response = await fetch(url, {
       headers,
-      next: { revalidate: 3600 },
+      cache: "no-store",
     });
 
     if (!response.ok) {

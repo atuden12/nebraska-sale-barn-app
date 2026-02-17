@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { fetchLMPRSlaughter, fetchCattleSlaughter } from "@/lib/api/usda-nass";
 import { ApiResponse, SlaughterData } from "@/lib/types";
 
-export const revalidate = 3600; // 1 hour
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
