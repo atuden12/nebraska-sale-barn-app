@@ -1,26 +1,28 @@
 /**
- * USDA NASS Quick Stats API Client
- *
- * Documentation: https://quickstats.nass.usda.gov/api
- *
- * This API provides historical and current data on:
- * - Cattle inventory
- * - Slaughter numbers
- * - Prices received
- * - Production statistics
+ * USDA NASS Quick Stats API + LMPR Slaughter via MARS
+ * NASS: https://quickstats.nass.usda.gov/api
+ * MARS: https://marsapi.ams.usda.gov/services/v1.2
  */
 
 import { SlaughterData } from "../types";
 
-const NASS_API_BASE = "https://quickstats.nass.usda.gov/api/api_GET";
+const NASS_BASE = "https://quickstats.nass.usda.gov/api/api_GET";
+const MARS_BASE = "https://marsapi.ams.usda.gov/services/v1.2";
 
-function getApiKey(): string {
+function getNassKey(): string {
   const key = process.env.USDA_NASS_API_KEY?.trim();
   if (!key) {
-    console.warn("USDA_NASS_API_KEY not set");
+    console.warn("[v0] USDA_NASS_API_KEY not set or empty");
   }
   return key || "";
 }
+
+function getMarsKey(): string {
+  const key = process.env.USDA_MARKET_NEWS_API_KEY?.trim();
+  return key || "";
+}
+
+// --- NASS Quick Stats ---
 
 interface NASSQueryParams {
   source_desc?: string;
@@ -38,10 +40,10 @@ interface NASSQueryParams {
 }
 
 async function fetchNASS<T>(params: NASSQueryParams): Promise<T | null> {
-  const apiKey = getApiKey();
+  const apiKey = getNassKey();
 
   if (!apiKey) {
-    console.error("NASS API key required");
+    console.error("[v0] NASS API key required but missing");
     return null;
   }
 
@@ -52,32 +54,34 @@ async function fetchNASS<T>(params: NASSQueryParams): Promise<T | null> {
   });
 
   try {
-    const url = `${NASS_API_BASE}?${queryParams.toString()}`;
-    console.log("[v0] NASS fetch:", params.statisticcat_desc, params.state_name || "NATIONAL", "| key present:", !!apiKey, "| at:", new Date().toISOString());
-    const response = await fetch(url, {
-      cache: "no-store",
-    });
+    const url = `${NASS_BASE}?${queryParams.toString()}`;
+    console.log(
+      `[v0] NASS fetch: ${params.statisticcat_desc} ${params.state_name || "NATIONAL"} key=${apiKey.substring(0, 4)}... ts=${Date.now()}`
+    );
+    const response = await fetch(url, { cache: "no-store" });
 
     if (!response.ok) {
       const body = await response.text();
-      console.error(`[v0] NASS API error: ${response.status}`, body);
+      console.error(`[v0] NASS error ${response.status}:`, body);
       return null;
     }
 
-    const data = await response.json();
-    console.log("[v0] NASS API success, records:", Array.isArray(data.data) ? data.data.length : "unknown");
-    return data.data || data;
+    const json = await response.json();
+    console.log(
+      `[v0] NASS success, records=${Array.isArray(json.data) ? json.data.length : "unknown"}`
+    );
+    return json.data || json;
   } catch (error) {
-    console.error("NASS API fetch error:", error);
+    console.error("[v0] NASS fetch error:", error);
     return null;
   }
 }
 
-// Fetch cattle slaughter data
+// Fetch cattle slaughter data from NASS
 export async function fetchCattleSlaughter(): Promise<SlaughterData[]> {
   const currentYear = new Date().getFullYear();
 
-  // Try to fetch Nebraska-specific data first
+  // Try Nebraska-specific first
   let data = await fetchNASS<any[]>({
     source_desc: "SURVEY",
     sector_desc: "ANIMALS & PRODUCTS",
@@ -92,7 +96,7 @@ export async function fetchCattleSlaughter(): Promise<SlaughterData[]> {
     year: `${currentYear}`,
   });
 
-  // If no state data, try national
+  // Fallback to national
   if (!data || data.length === 0) {
     data = await fetchNASS<any[]>({
       source_desc: "SURVEY",
@@ -112,7 +116,6 @@ export async function fetchCattleSlaughter(): Promise<SlaughterData[]> {
     return [];
   }
 
-  // Sort by date and take most recent
   const sorted = data
     .filter((item) => item.Value && item.Value !== "(D)")
     .sort((a, b) => {
@@ -133,7 +136,7 @@ export async function fetchCattleSlaughter(): Promise<SlaughterData[]> {
       weekEnding: item.week_ending || item.end_code || "",
       cattleSlaughter: currentValue,
       previousWeek: prevValue,
-      previousYear: currentValue, // Would need another query for year-ago
+      previousYear: currentValue,
       percentChangeWeek:
         prevValue > 0 ? ((currentValue - prevValue) / prevValue) * 100 : 0,
       percentChangeYear: 0,
@@ -142,7 +145,7 @@ export async function fetchCattleSlaughter(): Promise<SlaughterData[]> {
   });
 }
 
-// Fetch fed cattle inventory
+// Fetch cattle inventory from NASS
 export async function fetchCattleInventory(): Promise<any[]> {
   const currentYear = new Date().getFullYear();
 
@@ -161,39 +164,30 @@ export async function fetchCattleInventory(): Promise<any[]> {
   return data || [];
 }
 
-// Alternative: Fetch from USDA LMPR (Livestock Mandatory Price Reporting)
-// This often has more current slaughter data
+// --- LMPR via MARS API (slug_id 3237 = Wyoming-Nebraska Direct Cattle) ---
+
 export async function fetchLMPRSlaughter(): Promise<SlaughterData[]> {
-  // Wyoming-Nebraska Direct Cattle Report (AMS_3237)
-  const url = "https://marsapi.ams.usda.gov/services/v1.2/reports/3237";
+  const apiKey = getMarsKey();
+  const url = `${MARS_BASE}/reports/3237`;
+
+  const headers: HeadersInit = { Accept: "application/json" };
+  if (apiKey) {
+    const encoded = Buffer.from(`${apiKey}:`).toString("base64");
+    headers["Authorization"] = `Basic ${encoded}`;
+  }
 
   try {
-    const apiKey = process.env.USDA_MARKET_NEWS_API_KEY?.trim();
-    const headers: HeadersInit = {
-      Accept: "application/json",
-    };
-
-    if (apiKey) {
-      // USDA MARS API uses Basic auth with the API key as the username (no password)
-      const encoded = Buffer.from(`${apiKey}:`).toString("base64");
-      headers["Authorization"] = `Basic ${encoded}`;
-    }
-
-    console.log("[v0] Fetching LMPR slaughter from:", url, "key present:", !!apiKey);
-    const response = await fetch(url, {
-      headers,
-      cache: "no-store",
-    });
+    console.log(`[v0] LMPR fetch: ${url} auth=${!!apiKey} ts=${Date.now()}`);
+    const response = await fetch(url, { headers, cache: "no-store" });
 
     if (!response.ok) {
       const body = await response.text();
-      console.error(`[v0] LMPR API error: ${response.status} ${response.statusText}`, body);
+      console.error(`[v0] LMPR error ${response.status}:`, body);
       return [];
     }
 
-    console.log("[v0] LMPR API success");
-
     const data = await response.json();
+    console.log(`[v0] LMPR success, records=${Array.isArray(data) ? data.length : "obj"}`);
 
     if (!Array.isArray(data)) {
       return [];
@@ -216,11 +210,11 @@ export async function fetchLMPRSlaughter(): Promise<SlaughterData[]> {
           prevWeek > 0 ? ((currentValue - prevWeek) / prevWeek) * 100 : 0,
         percentChangeYear:
           prevYear > 0 ? ((currentValue - prevYear) / prevYear) * 100 : 0,
-        region: item.region || "National",
+        region: item.region || item.market_location_name || "National",
       };
     });
   } catch (error) {
-    console.error("LMPR slaughter fetch error:", error);
+    console.error("[v0] LMPR fetch error:", error);
     return [];
   }
 }

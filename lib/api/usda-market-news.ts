@@ -1,93 +1,84 @@
 /**
  * USDA Market News API Client (MARS API v1.2)
- *
- * Documentation: https://mymarketnews.ams.usda.gov/mars-api/getting-started
  * Auth: Basic auth with API key as username, no password
  * Reports use numeric slug_id, e.g. /reports/1860
  *
- * Nebraska Reports:
+ * Nebraska Reports discovered via API:
  * - 1860 (AMS_1860): Nebraska Weekly Livestock Auction Summary
  * - 3237 (AMS_3237): Wyoming-Nebraska Direct Cattle Report
- * - 2935 (AMS_2935): Nebraska Direct Hay Report
- * - 3225 (AMS_3225): Nebraska Daily Elevator Grain Bids
  */
 
-import { AuctionReport, AuctionSale, CashPrice, CashPriceReport } from "../types";
+import {
+  AuctionReport,
+  AuctionSale,
+  CashPrice,
+  CashPriceReport,
+} from "../types";
 
-const USDA_API_BASE = "https://marsapi.ams.usda.gov/services/v1.2";
+const MARS_BASE = "https://marsapi.ams.usda.gov/services/v1.2";
 
-// Helper to get API key
-function getApiKey(): string {
+function getMarsApiKey(): string {
   const key = process.env.USDA_MARKET_NEWS_API_KEY?.trim();
   if (!key) {
-    console.warn("USDA_MARKET_NEWS_API_KEY not set, using public endpoints");
+    console.warn("[v0] USDA_MARKET_NEWS_API_KEY not set");
   }
   return key || "";
 }
 
-// Generic fetch with error handling and caching
-async function fetchUSDA<T>(
-  endpoint: string,
-  revalidate: number = 3600
-): Promise<T | null> {
-  const apiKey = getApiKey();
-  const headers: HeadersInit = {
-    Accept: "application/json",
-  };
-
+function buildAuthHeaders(apiKey: string): HeadersInit {
+  const headers: HeadersInit = { Accept: "application/json" };
   if (apiKey) {
-    // USDA MARS API uses Basic auth with the API key as the username (no password)
     const encoded = Buffer.from(`${apiKey}:`).toString("base64");
     headers["Authorization"] = `Basic ${encoded}`;
   }
+  return headers;
+}
+
+async function marsApiFetch<T>(slugId: number): Promise<T | null> {
+  const apiKey = getMarsApiKey();
+  const headers = buildAuthHeaders(apiKey);
+  const url = `${MARS_BASE}/reports/${slugId}`;
 
   try {
-    const url = `${USDA_API_BASE}${endpoint}`;
-    console.log("[v0] MARS fetch:", url, "| auth:", !!apiKey);
-    const response = await fetch(url, {
-      headers,
-      cache: "no-store",
-    });
+    console.log(`[v0] MARS fetch slug=${slugId} auth=${!!apiKey} ts=${Date.now()}`);
+    const response = await fetch(url, { headers, cache: "no-store" });
 
     if (!response.ok) {
       const body = await response.text();
-      console.error(`[v0] USDA API error: ${response.status} ${response.statusText}`, body);
+      console.error(`[v0] MARS ${slugId} error: ${response.status}`, body);
       return null;
     }
 
-    console.log("[v0] USDA API success for:", endpoint);
-
-    return await response.json();
+    const json = await response.json();
+    console.log(`[v0] MARS ${slugId} success, records=${Array.isArray(json) ? json.length : "obj"}`);
+    return json;
   } catch (error) {
-    console.error("USDA API fetch error:", error);
+    console.error(`[v0] MARS ${slugId} fetch error:`, error);
     return null;
   }
 }
 
-// Wyoming-Nebraska Direct Cattle Report (AMS_3237, slug_id 3237)
-export async function fetchNebraskaDirectSlaughter(): Promise<CashPriceReport | null> {
-  const endpoint = "/reports/3237";
-  const data = await fetchUSDA<any[]>(endpoint, 3600);
+// --- Cash Prices: Wyoming-Nebraska Direct Cattle Report (slug_id 3237) ---
 
-  if (!data || !Array.isArray(data)) {
+export async function fetchNebraskaDirectSlaughter(): Promise<CashPriceReport | null> {
+  const data = await marsApiFetch<any[]>(3237);
+
+  if (!data || !Array.isArray(data) || data.length === 0) {
     return null;
   }
 
-  // Transform USDA MARS data to our format
-  // Fields: report_date, market_location_name, head_count, avg_weight,
-  //         avg_price, avg_price_min, avg_price_max, class, category, commodity
   const prices: CashPrice[] = data
     .filter((item) => parseFloat(item.avg_price) > 0)
     .slice(0, 20)
     .map((item) => ({
-      reportDate: item.report_date || item.published_date || new Date().toISOString(),
+      reportDate: item.report_date || new Date().toISOString(),
       priceType: mapPriceType(item.category || item.class || ""),
       region: item.market_location_name || item.market_location_state || "Nebraska",
       headCount: parseInt(item.head_count) || 0,
       weightedAvgPrice: parseFloat(item.avg_price) || 0,
       priceRange: {
-        low: parseFloat(item.avg_price_min) || 0,
-        high: parseFloat(item.avg_price_max) || 0,
+        low: parseFloat(item.avg_price_min || item.price_low) || 0,
+        high: parseFloat(item.avg_price_max || item.price_high) || 0,
       },
       avgWeight: parseFloat(item.avg_weight) || 0,
       dressedBasis: item.dressing ? parseFloat(item.dressing) : undefined,
@@ -99,17 +90,15 @@ export async function fetchNebraskaDirectSlaughter(): Promise<CashPriceReport | 
   };
 }
 
-// 5-Area / National prices - reuse Wyoming-Nebraska Direct Cattle data
-// since a separate 5-area report isn't available in MARS API
+// 5-Area reuses the same Nebraska direct cattle data
 export async function fetch5AreaWeeklyPrices(): Promise<CashPriceReport | null> {
-  // Fall back to the same Nebraska direct cattle report
   return fetchNebraskaDirectSlaughter();
 }
 
-// Nebraska Weekly Livestock Auction Summary (AMS_1860, slug_id 1860)
+// --- Auctions: Nebraska Weekly Livestock Auction Summary (slug_id 1860) ---
+
 export async function fetchNebraskaAuctions(): Promise<AuctionReport[]> {
-  const endpoint = "/reports/1860";
-  const data = await fetchUSDA<any[]>(endpoint, 7200); // 2-hour cache
+  const data = await marsApiFetch<any[]>(1860);
 
   if (!data || !Array.isArray(data) || data.length === 0) {
     return [];
@@ -152,8 +141,10 @@ export async function fetchNebraskaAuctions(): Promise<AuctionReport[]> {
         reportDate: items[0]?.report_date || new Date().toISOString(),
         reportTitle: items[0]?.report_title || "Nebraska Weekly Livestock Auction Summary",
         marketName: market,
-        totalHeadCount: parseInt(items[0]?.receipts) || sales.reduce((sum, s) => sum + s.headCount, 0),
-        sales: sales,
+        totalHeadCount:
+          parseInt(items[0]?.receipts) ||
+          sales.reduce((sum, s) => sum + s.headCount, 0),
+        sales,
         commentary: items[0]?.report_narrative || items[0]?.comments_commodity,
       });
     }
@@ -162,36 +153,25 @@ export async function fetchNebraskaAuctions(): Promise<AuctionReport[]> {
   return reports;
 }
 
-// Alternative: Fetch from public feed endpoint
+// --- Public Feed Fallback ---
+
 export async function fetchMarketNewsPublicFeed(): Promise<any> {
-  // This uses the public XML/RSS feed that doesn't require auth
-  const publicUrl =
-    "https://www.ams.usda.gov/mnreports/lm_ct155.txt";
+  const publicUrl = "https://www.ams.usda.gov/mnreports/lm_ct155.txt";
 
   try {
-    const response = await fetch(publicUrl, {
-      next: { revalidate: 3600 },
-    });
-
-    if (!response.ok) {
-      return null;
-    }
-
+    const response = await fetch(publicUrl, { cache: "no-store" });
+    if (!response.ok) return null;
     const text = await response.text();
     return parseUSDATextReport(text);
   } catch (error) {
-    console.error("Error fetching public USDA feed:", error);
+    console.error("[v0] Public USDA feed error:", error);
     return null;
   }
 }
 
-// Parse USDA plain text reports
 function parseUSDATextReport(text: string): any {
-  // USDA text reports have a specific format
-  // This is a simplified parser
   const lines = text.split("\n");
   const data: any[] = [];
-
   let inDataSection = false;
 
   for (const line of lines) {
@@ -199,9 +179,7 @@ function parseUSDATextReport(text: string): any {
       inDataSection = true;
       continue;
     }
-
     if (inDataSection && line.trim()) {
-      // Parse data rows - format varies by report
       const parts = line.split(/\s{2,}/);
       if (parts.length >= 3) {
         data.push({
@@ -212,11 +190,11 @@ function parseUSDATextReport(text: string): any {
       }
     }
   }
-
   return data;
 }
 
-// Helper functions
+// --- Helpers ---
+
 function mapPriceType(
   type: string
 ): "negotiated" | "formula" | "forward" | "negotiated_grid" {
