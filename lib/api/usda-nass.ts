@@ -52,16 +52,20 @@ async function fetchNASS<T>(params: NASSQueryParams): Promise<T | null> {
   });
 
   try {
-    const response = await fetch(`${NASS_API_BASE}?${queryParams.toString()}`, {
+    const url = `${NASS_API_BASE}?${queryParams.toString()}`;
+    console.log("[v0] Fetching NASS data:", params.statisticcat_desc, params.state_name || "NATIONAL");
+    const response = await fetch(url, {
       next: { revalidate: 86400 }, // Daily cache for NASS data
     });
 
     if (!response.ok) {
-      console.error(`NASS API error: ${response.status}`);
+      const body = await response.text();
+      console.error(`[v0] NASS API error: ${response.status}`, body);
       return null;
     }
 
     const data = await response.json();
+    console.log("[v0] NASS API success, records:", Array.isArray(data.data) ? data.data.length : "unknown");
     return data.data || data;
   } catch (error) {
     console.error("NASS API fetch error:", error);
@@ -170,17 +174,24 @@ export async function fetchLMPRSlaughter(): Promise<SlaughterData[]> {
     };
 
     if (apiKey) {
-      headers["Authorization"] = apiKey;
+      // USDA MARS API uses Basic auth with the API key as the username (no password)
+      const encoded = Buffer.from(`${apiKey}:`).toString("base64");
+      headers["Authorization"] = `Basic ${encoded}`;
     }
 
+    console.log("[v0] Fetching LMPR slaughter data from MARS API");
     const response = await fetch(url, {
       headers,
       next: { revalidate: 3600 },
     });
 
     if (!response.ok) {
+      const body = await response.text();
+      console.error(`[v0] LMPR API error: ${response.status} ${response.statusText}`, body);
       return [];
     }
+
+    console.log("[v0] LMPR API success");
 
     const data = await response.json();
 

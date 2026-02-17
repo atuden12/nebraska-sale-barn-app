@@ -37,19 +37,26 @@ async function fetchUSDA<T>(
   };
 
   if (apiKey) {
-    headers["Authorization"] = apiKey;
+    // USDA MARS API uses Basic auth with the API key as the username (no password)
+    const encoded = Buffer.from(`${apiKey}:`).toString("base64");
+    headers["Authorization"] = `Basic ${encoded}`;
   }
 
   try {
-    const response = await fetch(`${USDA_API_BASE}${endpoint}`, {
+    const url = `${USDA_API_BASE}${endpoint}`;
+    console.log("[v0] Fetching USDA Market News:", url);
+    const response = await fetch(url, {
       headers,
       next: { revalidate },
     });
 
     if (!response.ok) {
-      console.error(`USDA API error: ${response.status} ${response.statusText}`);
+      const body = await response.text();
+      console.error(`[v0] USDA API error: ${response.status} ${response.statusText}`, body);
       return null;
     }
+
+    console.log("[v0] USDA API success for:", endpoint);
 
     return await response.json();
   } catch (error) {
