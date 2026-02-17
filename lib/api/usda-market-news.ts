@@ -65,9 +65,10 @@ async function fetchUSDA<T>(
   }
 }
 
-// Nebraska Weekly Direct Slaughter Cattle Report (LM_CT155)
+// Nebraska Weekly Direct Slaughter Cattle - Negotiated Purchases (LM_CT158)
+// LM_CT165 is the Nebraska Weekly Weighted Average
 export async function fetchNebraskaDirectSlaughter(): Promise<CashPriceReport | null> {
-  const endpoint = "/reports/lm_ct155";
+  const endpoint = "/reports/LM_CT158";
   const data = await fetchUSDA<any[]>(endpoint, 3600);
 
   if (!data || !Array.isArray(data)) {
@@ -95,9 +96,9 @@ export async function fetchNebraskaDirectSlaughter(): Promise<CashPriceReport | 
   };
 }
 
-// 5-Area Weekly Weighted Average (LM_CT169)
+// 5-Area Weekly Slaughter Cattle (LM_CT169)
 export async function fetch5AreaWeeklyPrices(): Promise<CashPriceReport | null> {
-  const endpoint = "/reports/lm_ct169";
+  const endpoint = "/reports/LM_CT169";
   const data = await fetchUSDA<any[]>(endpoint, 3600);
 
   if (!data || !Array.isArray(data)) {
@@ -127,8 +128,8 @@ export async function fetch5AreaWeeklyPrices(): Promise<CashPriceReport | null> 
 export async function fetchNebraskaAuctions(): Promise<AuctionReport[]> {
   // Nebraska auction markets - we'll try multiple report slugs
   const auctionSlugs = [
-    "lm_ct758", // Nebraska Auction Summary
-    "lm_ct712", // North Central Nebraska
+    "LM_CT758", // Nebraska Auction Summary
+    "LM_CT712", // North Central Nebraska
   ];
 
   const reports: AuctionReport[] = [];
@@ -176,7 +177,7 @@ export async function fetchNebraskaAuctions(): Promise<AuctionReport[]> {
 export async function fetchMarketNewsPublicFeed(): Promise<any> {
   // This uses the public XML/RSS feed that doesn't require auth
   const publicUrl =
-    "https://www.ams.usda.gov/mnreports/lm_ct155.txt";
+    "https://www.ams.usda.gov/mnreports/lm_ct158.txt";
 
   try {
     const response = await fetch(publicUrl, {

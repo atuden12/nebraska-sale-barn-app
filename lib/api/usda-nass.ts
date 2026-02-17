@@ -165,7 +165,7 @@ export async function fetchCattleInventory(): Promise<any[]> {
 // This often has more current slaughter data
 export async function fetchLMPRSlaughter(): Promise<SlaughterData[]> {
   // LMPR endpoint for weekly slaughter summary
-  const url = "https://marsapi.ams.usda.gov/services/v1.2/reports/lm_ct100";
+  const url = "https://marsapi.ams.usda.gov/services/v1.2/reports/LM_CT100";
 
   try {
     const apiKey = process.env.USDA_MARKET_NEWS_API_KEY;
