@@ -1,16 +1,15 @@
 /**
- * USDA Market News API Client
+ * USDA Market News API Client (MARS API v1.2)
  *
- * Documentation: https://mymarketnews.ams.usda.gov/mymarketnews-api
+ * Documentation: https://mymarketnews.ams.usda.gov/mars-api/getting-started
+ * Auth: Basic auth with API key as username, no password
+ * Reports use numeric slug_id, e.g. /reports/1860
  *
- * Key Report Slugs for Nebraska Cattle:
- * - LM_CT155: Nebraska Weekly Direct Slaughter Cattle
- * - LM_CT169: 5-Area Weekly Weighted Average Direct Slaughter Cattle
- * - LM_CT150: National Weekly Direct Slaughter Cattle
- * - LM_XB459: Nebraska Auction Prices
- *
- * Auction Report Slugs:
- * - Various Nebraska auction markets have individual slugs
+ * Nebraska Reports:
+ * - 1860 (AMS_1860): Nebraska Weekly Livestock Auction Summary
+ * - 3237 (AMS_3237): Wyoming-Nebraska Direct Cattle Report
+ * - 2935 (AMS_2935): Nebraska Direct Hay Report
+ * - 3225 (AMS_3225): Nebraska Daily Elevator Grain Bids
  */
 
 import { AuctionReport, AuctionSale, CashPrice, CashPriceReport } from "../types";
@@ -65,10 +64,9 @@ async function fetchUSDA<T>(
   }
 }
 
-// Nebraska Weekly Direct Slaughter Cattle - Negotiated Purchases (LM_CT158)
-// LM_CT165 is the Nebraska Weekly Weighted Average
+// Wyoming-Nebraska Direct Cattle Report (AMS_3237, slug_id 3237)
 export async function fetchNebraskaDirectSlaughter(): Promise<CashPriceReport | null> {
-  const endpoint = "/reports/LM_CT158";
+  const endpoint = "/reports/3237";
   const data = await fetchUSDA<any[]>(endpoint, 3600);
 
   if (!data || !Array.isArray(data)) {
