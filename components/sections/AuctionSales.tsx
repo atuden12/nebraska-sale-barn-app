@@ -25,6 +25,7 @@ export function AuctionSales({ initialData }: AuctionSalesProps) {
   const [reports, setReports] = useState<AuctionReport[]>(initialData || []);
   const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState<string | null>(null);
+  const [dataSource, setDataSource] = useState<"live" | "demo" | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -34,6 +35,7 @@ export function AuctionSales({ initialData }: AuctionSalesProps) {
       if (!response.ok) throw new Error("Failed to fetch auction data");
       const data = await response.json();
       setReports(data.data || []);
+      setDataSource(data.source || null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred");
     } finally {
@@ -78,7 +80,16 @@ export function AuctionSales({ initialData }: AuctionSalesProps) {
   return (
     <Card id="auctions">
       <CardHeader
-        action={<RefreshButton onRefresh={handleRefresh} />}
+        action={
+          <div className="flex items-center gap-2">
+            {dataSource && (
+              <Badge variant={dataSource === "live" ? "success" : "warning"}>
+                {dataSource === "live" ? "LIVE" : "DEMO DATA"}
+              </Badge>
+            )}
+            <RefreshButton onRefresh={handleRefresh} />
+          </div>
+        }
       >
         <div className="flex items-center gap-2">
           <div className="p-2 bg-prairie-100 rounded-lg">

@@ -15,6 +15,7 @@ export async function GET() {
         data: demoData,
         error: null,
         lastUpdated: new Date().toISOString(),
+        source: "demo",
       } as ApiResponse<AuctionReport[]>);
     }
 
@@ -22,6 +23,7 @@ export async function GET() {
       data: reports,
       error: null,
       lastUpdated: new Date().toISOString(),
+      source: "live",
     } as ApiResponse<AuctionReport[]>);
   } catch (error) {
     console.error("Auction API error:", error);
@@ -30,6 +32,7 @@ export async function GET() {
         data: getDemoAuctionData(),
         error: "Using cached data - live feed unavailable",
         lastUpdated: new Date().toISOString(),
+        source: "demo",
       } as ApiResponse<AuctionReport[]>,
       { status: 200 }
     );

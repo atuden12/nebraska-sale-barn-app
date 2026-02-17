@@ -24,6 +24,7 @@ export async function GET() {
         data: demoData,
         error: null,
         lastUpdated: new Date().toISOString(),
+        source: "demo",
       } as ApiResponse<CashPriceReport>);
     }
 
@@ -31,6 +32,7 @@ export async function GET() {
       data: priceReport,
       error: null,
       lastUpdated: new Date().toISOString(),
+      source: "live",
     } as ApiResponse<CashPriceReport>);
   } catch (error) {
     console.error("Cash prices API error:", error);
@@ -39,6 +41,7 @@ export async function GET() {
         data: getDemoCashPriceData(),
         error: "Using cached data - live feed unavailable",
         lastUpdated: new Date().toISOString(),
+        source: "demo",
       } as ApiResponse<CashPriceReport>,
       { status: 200 }
     );

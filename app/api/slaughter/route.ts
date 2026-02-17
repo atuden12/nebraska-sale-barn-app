@@ -21,6 +21,7 @@ export async function GET() {
         data: demoData,
         error: null,
         lastUpdated: new Date().toISOString(),
+        source: "demo",
       } as ApiResponse<SlaughterData[]>);
     }
 
@@ -28,6 +29,7 @@ export async function GET() {
       data: slaughterData,
       error: null,
       lastUpdated: new Date().toISOString(),
+      source: "live",
     } as ApiResponse<SlaughterData[]>);
   } catch (error) {
     console.error("Slaughter API error:", error);
@@ -36,6 +38,7 @@ export async function GET() {
         data: getDemoSlaughterData(),
         error: "Using cached data - live feed unavailable",
         lastUpdated: new Date().toISOString(),
+        source: "demo",
       } as ApiResponse<SlaughterData[]>,
       { status: 200 }
     );

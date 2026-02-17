@@ -84,6 +84,7 @@ export interface ApiResponse<T> {
   data: T | null;
   error: string | null;
   lastUpdated: string;
+  source: "live" | "demo";
 }
 
 // Chart data types

@@ -10,6 +10,7 @@ import {
   CardDescription,
   CardContent,
   TableSkeleton,
+  Badge,
   TrendBadge,
   RefreshButton,
   ErrorMessage,
@@ -25,6 +26,7 @@ export function SlaughterData({ initialData }: SlaughterDataProps) {
   const [data, setData] = useState<SlaughterDataType[]>(initialData || []);
   const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState<string | null>(null);
+  const [dataSource, setDataSource] = useState<"live" | "demo" | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -34,6 +36,7 @@ export function SlaughterData({ initialData }: SlaughterDataProps) {
       if (!response.ok) throw new Error("Failed to fetch slaughter data");
       const result = await response.json();
       setData(result.data || []);
+      setDataSource(result.source || null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred");
     } finally {
@@ -56,7 +59,16 @@ export function SlaughterData({ initialData }: SlaughterDataProps) {
   return (
     <Card id="slaughter">
       <CardHeader
-        action={<RefreshButton onRefresh={fetchData} />}
+        action={
+          <div className="flex items-center gap-2">
+            {dataSource && (
+              <Badge variant={dataSource === "live" ? "success" : "warning"}>
+                {dataSource === "live" ? "LIVE" : "DEMO DATA"}
+              </Badge>
+            )}
+            <RefreshButton onRefresh={fetchData} />
+          </div>
+        }
       >
         <div className="flex items-center gap-2">
           <div className="p-2 bg-cornhusker-100 rounded-lg">

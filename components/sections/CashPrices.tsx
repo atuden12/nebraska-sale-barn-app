@@ -32,6 +32,7 @@ export function CashPrices({ initialData }: CashPricesProps) {
   const [report, setReport] = useState<CashPriceReport | null>(initialData || null);
   const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState<string | null>(null);
+  const [dataSource, setDataSource] = useState<"live" | "demo" | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -41,6 +42,7 @@ export function CashPrices({ initialData }: CashPricesProps) {
       if (!response.ok) throw new Error("Failed to fetch cash price data");
       const result = await response.json();
       setReport(result.data);
+      setDataSource(result.source || null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred");
     } finally {
@@ -75,7 +77,16 @@ export function CashPrices({ initialData }: CashPricesProps) {
   return (
     <Card id="cash-prices">
       <CardHeader
-        action={<RefreshButton onRefresh={fetchData} />}
+        action={
+          <div className="flex items-center gap-2">
+            {dataSource && (
+              <Badge variant={dataSource === "live" ? "success" : "warning"}>
+                {dataSource === "live" ? "LIVE" : "DEMO DATA"}
+              </Badge>
+            )}
+            <RefreshButton onRefresh={fetchData} />
+          </div>
+        }
       >
         <div className="flex items-center gap-2">
           <div className="p-2 bg-pasture-100 rounded-lg">
