@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import {
-  fetchNebraskaDirectSlaughter,
-  fetch5AreaWeeklyPrices,
+  fetchRegionDetailReport,
+  REGION_TO_SLUG_ID,
+  REGION_TO_FORMULA_SLUG_ID,
 } from "@/lib/api/usda-market-news";
 import { ApiResponse, CashPriceReport, CashPrice } from "@/lib/types";
 import { getRegionName } from "@/lib/slugs";
@@ -16,36 +17,77 @@ export async function GET(
   const regionName = getRegionName(region);
 
   try {
-    // Fetch all cash price data
-    let priceReport = await fetchNebraskaDirectSlaughter();
+    const slugId = REGION_TO_SLUG_ID[region];
+    const formulaSlugId = REGION_TO_FORMULA_SLUG_ID[region];
 
-    // Also try 5-area data
-    const fiveAreaReport = await fetch5AreaWeeklyPrices();
-
-    // Combine all prices
-    const allPrices: CashPrice[] = [
-      ...(priceReport?.prices || []),
-      ...(fiveAreaReport?.prices || []),
-    ];
-
-    // Filter by region name (case-insensitive)
-    const regionPrices = allPrices.filter(
-      (p) => p.region.toLowerCase() === regionName.toLowerCase()
-    );
-
-    if (regionPrices.length > 0) {
-      const report: CashPriceReport = {
-        reportDate: regionPrices[0].reportDate,
-        prices: regionPrices,
-      };
+    if (!slugId) {
+      // Unknown region - return demo data
+      const demoData = getDemoDataForRegion(regionName);
       return NextResponse.json({
-        data: report,
+        data: demoData,
         error: null,
         lastUpdated: new Date().toISOString(),
       } as ApiResponse<CashPriceReport>);
     }
 
-    // Fall back to demo data filtered by region
+    // Fetch detail report from MPR Datamart (all sections)
+    console.log("[v0] Fetching MPR detail report for slug:", slugId);
+    const report = await fetchRegionDetailReport(slugId);
+
+    if (report && (report.summary || report.details.length > 0)) {
+      const prices: CashPrice[] = [];
+
+      // Parse detail rows into CashPrice objects
+      for (const row of report.details) {
+        if (!row.weighted_avg_price) continue; // Skip rows with no price data
+
+        const headCount = parseUSDANumber(row.head_count);
+        const wtdAvg = parseFloat(row.weighted_avg_price || "0") || 0;
+        const priceLow = parseFloat(row.price_range_low || "0") || 0;
+        const priceHigh = parseFloat(row.price_range_high || "0") || 0;
+        const avgWeight = parseUSDANumber(row.weight_range_avg);
+
+        // Determine price type from purchase_type_code
+        let priceType: CashPrice["priceType"] = "negotiated";
+        const purchaseType = (row.purchase_type_code || "").toLowerCase();
+        if (purchaseType.includes("formula")) priceType = "formula";
+        else if (purchaseType.includes("forward")) priceType = "forward";
+        else if (purchaseType.includes("grid")) priceType = "negotiated_grid";
+
+        // Build a descriptive region string
+        const classDesc = row.class_description || "";
+        const basisDesc = row.selling_basis_description || "";
+        const gradeDesc = row.grade_description || "";
+
+        prices.push({
+          reportDate: row.report_date || "",
+          priceType,
+          region: `${classDesc} - ${basisDesc} - ${gradeDesc}`,
+          headCount,
+          weightedAvgPrice: wtdAvg,
+          priceRange: { low: priceLow, high: priceHigh },
+          avgWeight,
+          dressedBasis: basisDesc.toLowerCase().includes("dressed")
+            ? wtdAvg
+            : undefined,
+        });
+      }
+
+      console.log("[v0] Parsed", prices.length, "price rows from MPR detail data");
+      if (prices.length > 0) {
+        return NextResponse.json({
+          data: {
+            reportDate: report.summary?.report_date || prices[0].reportDate,
+            prices,
+            narrative: report.summary?.trend || undefined,
+          },
+          error: null,
+          lastUpdated: new Date().toISOString(),
+        } as ApiResponse<CashPriceReport & { narrative?: string }>);
+      }
+    }
+
+    // Fall back to demo data if no live data
     const demoData = getDemoDataForRegion(regionName);
     return NextResponse.json({
       data: demoData,
@@ -63,123 +105,118 @@ export async function GET(
   }
 }
 
+function parseUSDANumber(val: string | null | undefined): number {
+  if (!val) return 0;
+  return parseFloat(val.replace(/,/g, "")) || 0;
+}
+
 function getDemoDataForRegion(regionName: string): CashPriceReport {
   const today = new Date();
   const lastFriday = new Date(today);
   lastFriday.setDate(today.getDate() - ((today.getDay() + 2) % 7));
   const dateStr = lastFriday.toISOString();
 
-  // Demo data keyed by region
   const regionData: Record<string, CashPrice[]> = {
     Nebraska: [
       {
         reportDate: dateStr,
         priceType: "negotiated",
-        region: "Nebraska",
-        headCount: 42500,
-        weightedAvgPrice: 186.25,
-        priceRange: { low: 184.0, high: 188.5 },
-        avgWeight: 1425,
-        dressedBasis: 294.5,
+        region: "STEER - LIVE FOB - Over 80% Choice",
+        headCount: 8070,
+        weightedAvgPrice: 245.14,
+        priceRange: { low: 243.0, high: 246.0 },
+        avgWeight: 1629,
       },
-      {
-        reportDate: dateStr,
-        priceType: "formula",
-        region: "Nebraska",
-        headCount: 156000,
-        weightedAvgPrice: 293.85,
-        priceRange: { low: 288.0, high: 298.0 },
-        avgWeight: 1435,
-      },
-      {
-        reportDate: dateStr,
-        priceType: "negotiated_grid",
-        region: "Nebraska",
-        headCount: 28500,
-        weightedAvgPrice: 295.25,
-        priceRange: { low: 290.0, high: 300.5 },
-        avgWeight: 1440,
-      },
-    ],
-    Colorado: [
       {
         reportDate: dateStr,
         priceType: "negotiated",
-        region: "Colorado",
-        headCount: 18200,
-        weightedAvgPrice: 185.75,
-        priceRange: { low: 183.5, high: 188.0 },
-        avgWeight: 1415,
-        dressedBasis: 293.75,
+        region: "STEER - LIVE FOB - 65-80% Choice",
+        headCount: 261,
+        weightedAvgPrice: 245.0,
+        priceRange: { low: 245.0, high: 245.0 },
+        avgWeight: 1550,
       },
       {
         reportDate: dateStr,
-        priceType: "formula",
-        region: "Colorado",
-        headCount: 78500,
-        weightedAvgPrice: 292.5,
-        priceRange: { low: 287.0, high: 297.0 },
-        avgWeight: 1428,
+        priceType: "negotiated",
+        region: "STEER - DRESSED DELIVERED - Over 80% Choice",
+        headCount: 4799,
+        weightedAvgPrice: 381.32,
+        priceRange: { low: 378.0, high: 382.0 },
+        avgWeight: 1014,
+        dressedBasis: 381.32,
+      },
+      {
+        reportDate: dateStr,
+        priceType: "negotiated",
+        region: "HEIFER - LIVE FOB - Over 80% Choice",
+        headCount: 3500,
+        weightedAvgPrice: 244.5,
+        priceRange: { low: 243.0, high: 246.0 },
+        avgWeight: 1425,
+      },
+      {
+        reportDate: dateStr,
+        priceType: "negotiated",
+        region: "HEIFER - DRESSED DELIVERED - Over 80% Choice",
+        headCount: 2800,
+        weightedAvgPrice: 380.0,
+        priceRange: { low: 378.0, high: 382.0 },
+        avgWeight: 985,
+        dressedBasis: 380.0,
+      },
+    ],
+    Kansas: [
+      {
+        reportDate: dateStr,
+        priceType: "negotiated",
+        region: "STEER - LIVE FOB - Over 80% Choice",
+        headCount: 6200,
+        weightedAvgPrice: 244.75,
+        priceRange: { low: 243.0, high: 246.0 },
+        avgWeight: 1610,
+      },
+      {
+        reportDate: dateStr,
+        priceType: "negotiated",
+        region: "STEER - DRESSED DELIVERED - Over 80% Choice",
+        headCount: 3100,
+        weightedAvgPrice: 380.5,
+        priceRange: { low: 378.0, high: 383.0 },
+        avgWeight: 1005,
+        dressedBasis: 380.5,
       },
     ],
     "Iowa-Minnesota": [
       {
         reportDate: dateStr,
         priceType: "negotiated",
-        region: "Iowa-Minnesota",
-        headCount: 15800,
-        weightedAvgPrice: 186.5,
-        priceRange: { low: 184.5, high: 188.5 },
-        avgWeight: 1430,
-        dressedBasis: 295.0,
+        region: "STEER - LIVE FOB - Over 80% Choice",
+        headCount: 5800,
+        weightedAvgPrice: 245.5,
+        priceRange: { low: 244.0, high: 247.0 },
+        avgWeight: 1620,
       },
-      {
-        reportDate: dateStr,
-        priceType: "formula",
-        region: "Iowa-Minnesota",
-        headCount: 62000,
-        weightedAvgPrice: 294.15,
-        priceRange: { low: 289.0, high: 299.0 },
-        avgWeight: 1432,
-      },
-    ],
-    "5-Area": [
       {
         reportDate: dateStr,
         priceType: "negotiated",
-        region: "5-Area",
-        headCount: 95000,
-        weightedAvgPrice: 186.15,
-        priceRange: { low: 183.5, high: 188.5 },
-        avgWeight: 1422,
-        dressedBasis: 294.25,
+        region: "STEER - DRESSED DELIVERED - Over 80% Choice",
+        headCount: 4200,
+        weightedAvgPrice: 382.0,
+        priceRange: { low: 380.0, high: 384.0 },
+        avgWeight: 1020,
+        dressedBasis: 382.0,
       },
+    ],
+    "Texas-Oklahoma": [
       {
         reportDate: dateStr,
-        priceType: "formula",
-        region: "5-Area",
-        headCount: 320000,
-        weightedAvgPrice: 293.45,
-        priceRange: { low: 287.0, high: 299.0 },
-        avgWeight: 1433,
-      },
-      {
-        reportDate: dateStr,
-        priceType: "forward",
-        region: "5-Area",
-        headCount: 32000,
-        weightedAvgPrice: 188.5,
-        priceRange: { low: 185.0, high: 192.0 },
-        avgWeight: 1400,
-      },
-      {
-        reportDate: dateStr,
-        priceType: "negotiated_grid",
-        region: "5-Area",
-        headCount: 58000,
-        weightedAvgPrice: 295.85,
-        priceRange: { low: 290.0, high: 302.0 },
-        avgWeight: 1438,
+        priceType: "negotiated",
+        region: "STEER - LIVE FOB - Over 80% Choice",
+        headCount: 7500,
+        weightedAvgPrice: 244.25,
+        priceRange: { low: 242.0, high: 246.0 },
+        avgWeight: 1595,
       },
     ],
   };

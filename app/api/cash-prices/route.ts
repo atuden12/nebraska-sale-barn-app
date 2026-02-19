@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import {
-  fetchNebraskaDirectSlaughter,
-  fetch5AreaWeeklyPrices,
+  fetchAllRegionSummaries,
 } from "@/lib/api/usda-market-news";
 import { ApiResponse, CashPriceReport, CashPrice } from "@/lib/types";
 
@@ -9,15 +8,12 @@ export const revalidate = 3600; // 1 hour
 
 export async function GET() {
   try {
-    // Fetch Nebraska-specific data first
-    let priceReport = await fetchNebraskaDirectSlaughter();
+    // Fetch all region summaries from the public MPR Datamart API
+    console.log("[v0] Fetching all region summaries from MPR Datamart...");
+    const priceReport = await fetchAllRegionSummaries();
+    console.log("[v0] Got prices:", priceReport?.prices?.length || 0, "regions");
 
-    // If no Nebraska data, try 5-area
-    if (!priceReport || priceReport.prices.length === 0) {
-      priceReport = await fetch5AreaWeeklyPrices();
-    }
-
-    // If still no data, return demo data
+    // If no live data available, return demo data
     if (!priceReport || priceReport.prices.length === 0) {
       const demoData = getDemoCashPriceData();
       return NextResponse.json({

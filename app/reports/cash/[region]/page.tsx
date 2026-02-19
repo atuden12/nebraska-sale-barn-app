@@ -37,7 +37,7 @@ export default function CashPriceDetailPage() {
   const regionSlug = params.region as string;
   const regionName = getRegionName(regionSlug);
 
-  const [report, setReport] = useState<CashPriceReport | null>(null);
+  const [report, setReport] = useState<(CashPriceReport & { narrative?: string }) | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -180,6 +180,20 @@ export default function CashPriceDetailPage() {
             </div>
           </div>
 
+          {/* Market narrative/trend */}
+          {report.narrative && (
+            <Card className="mb-8">
+              <CardHeader>
+                <CardTitle>Market Narrative</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-gray-700 italic leading-relaxed">
+                  {report.narrative}
+                </p>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Price tables by type */}
           <div className="space-y-6">
             {Object.entries(pricesByType).map(([type, prices]) => (
@@ -210,7 +224,7 @@ export default function CashPriceDetailPage() {
                     <table className="w-full min-w-[600px]">
                       <thead>
                         <tr className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b border-gray-200">
-                          <th className="px-4 py-3">Region</th>
+                          <th className="px-4 py-3">Description</th>
                           <th className="px-4 py-3 text-right">Head Count</th>
                           <th className="px-4 py-3 text-right">Avg Weight</th>
                           <th className="px-4 py-3 text-right">Price Range</th>

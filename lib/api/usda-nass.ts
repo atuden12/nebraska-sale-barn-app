@@ -157,55 +157,48 @@ export async function fetchCattleInventory(): Promise<any[]> {
   return data || [];
 }
 
-// Alternative: Fetch from USDA LMPR (Livestock Mandatory Price Reporting)
-// This often has more current slaughter data
+// Alternative: Fetch from USDA MPR Datamart (Livestock Mandatory Price Reporting)
+// Using the free public API - slug 2466 = 5 Area Daily Direct Slaughter Cattle (LM_CT100)
 export async function fetchLMPRSlaughter(): Promise<SlaughterData[]> {
-  // LMPR endpoint for weekly slaughter summary
-  const url = "https://marsapi.ams.usda.gov/services/v1.2/reports/lm_ct100";
+  const url = "https://mpr.datamart.ams.usda.gov/services/v1.1/reports/2466";
 
   try {
-    const apiKey = process.env.USDA_MARKET_NEWS_API_KEY;
-    const headers: HeadersInit = {
-      Accept: "application/json",
-    };
-
-    if (apiKey) {
-      headers["Authorization"] = apiKey;
-    }
-
     const response = await fetch(url, {
-      headers,
+      headers: { Accept: "application/json" },
       next: { revalidate: 3600 },
     });
 
     if (!response.ok) {
+      console.error(`MPR Datamart slaughter error: ${response.status}`);
       return [];
     }
 
     const data = await response.json();
+    const results = data?.results;
 
-    if (!Array.isArray(data)) {
+    if (!results || !Array.isArray(results)) {
       return [];
     }
 
-    return data.slice(0, 8).map((item: any, index: number) => {
-      const currentValue =
-        parseInt(item.current_week_slaughter || item.head_count) || 0;
-      const prevWeek =
-        parseInt(item.previous_week_slaughter || item.prev_week) || currentValue;
-      const prevYear =
-        parseInt(item.year_ago_slaughter || item.prev_year) || currentValue;
+    return results.slice(0, 8).map((item: any, index: number) => {
+      const parseNum = (v: string | null) =>
+        v ? parseFloat(v.replace(/,/g, "")) || 0 : 0;
+
+      const currentValue = parseNum(item.total_head_count || item.head_count);
+      const prevItem = results[index + 1];
+      const prevWeek = prevItem
+        ? parseNum(prevItem.total_head_count || prevItem.head_count)
+        : currentValue;
 
       return {
-        weekEnding: item.week_ending || item.report_date || "",
+        weekEnding: item.report_date || "",
         cattleSlaughter: currentValue,
         previousWeek: prevWeek,
-        previousYear: prevYear,
+        previousYear: currentValue,
         percentChangeWeek:
           prevWeek > 0 ? ((currentValue - prevWeek) / prevWeek) * 100 : 0,
-        percentChangeYear:
-          prevYear > 0 ? ((currentValue - prevYear) / prevYear) * 100 : 0,
-        region: item.region || "National",
+        percentChangeYear: 0,
+        region: "5-Area",
       };
     });
   } catch (error) {

@@ -26,15 +26,17 @@ export const REGION_MAP: Record<string, string> = {
   "iowa-minnesota": "Iowa-Minnesota",
   "5-area": "5-Area",
   kansas: "Kansas",
-  texas: "Texas",
+  "texas-oklahoma": "Texas-Oklahoma",
 };
 
-// Known USDA report slugs by region
-export const REGION_REPORT_SLUGS: Record<string, string> = {
-  nebraska: "lm_ct155",
-  colorado: "lm_ct155",
-  "iowa-minnesota": "lm_ct155",
-  "5-area": "lm_ct169",
+// Known MPR Datamart slug IDs by region (negotiated cash reports)
+export const REGION_REPORT_MPR_SLUG: Record<string, number> = {
+  nebraska: 2485, // LM_CT158
+  kansas: 2484, // LM_CT157
+  "texas-oklahoma": 2483, // LM_CT156
+  "iowa-minnesota": 2487, // LM_CT167
+  colorado: 2486, // LM_CT166
+  "5-area": 2477, // LM_CT150
 };
 
 // Known auction market mappings
@@ -57,13 +59,16 @@ export function getMarketName(slug: string): string {
   return MARKET_MAP[slug] || fromSlug(slug);
 }
 
-// Get the USDA report URL for a region
+// Get the USDA report URL for a region (links to MPR Datamart)
 export function getUSDAReportUrl(regionSlug: string): string {
-  const reportSlug = REGION_REPORT_SLUGS[regionSlug] || "lm_ct155";
-  return `https://www.ams.usda.gov/mnreports/${reportSlug}.txt`;
+  const mprSlugId = REGION_REPORT_MPR_SLUG[regionSlug];
+  if (mprSlugId) {
+    return `https://mpr.datamart.ams.usda.gov/services/v1.1/reports/${mprSlugId}`;
+  }
+  return "https://mpr.datamart.ams.usda.gov/";
 }
 
 // Get the USDA auction report URL
 export function getUSDAauctionReportUrl(): string {
-  return "https://www.ams.usda.gov/mnreports/lm_ct758.txt";
+  return "https://mymarketnews.ams.usda.gov/";
 }
