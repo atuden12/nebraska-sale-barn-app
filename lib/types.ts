@@ -76,6 +76,7 @@ export interface FuturesContract {
 export interface FuturesData {
   liveCattle: FuturesContract[];
   feederCattle: FuturesContract[];
+  corn: FuturesContract[];
   lastUpdated: string;
 }
 

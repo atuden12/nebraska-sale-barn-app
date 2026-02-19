@@ -26,7 +26,7 @@ export function FuturesPrices({ initialData }: FuturesPricesProps) {
   const [data, setData] = useState<FuturesData | null>(initialData || null);
   const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"live" | "feeder">("live");
+  const [activeTab, setActiveTab] = useState<"live" | "feeder" | "corn">("live");
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -49,8 +49,20 @@ export function FuturesPrices({ initialData }: FuturesPricesProps) {
     }
   }, [initialData, fetchData]);
 
-  const contracts = activeTab === "live" ? data?.liveCattle : data?.feederCattle;
+  const contracts =
+    activeTab === "live"
+      ? data?.liveCattle
+      : activeTab === "feeder"
+        ? data?.feederCattle
+        : data?.corn;
   const frontMonth = contracts?.[0];
+  const isCorn = activeTab === "corn";
+  const formatPrice = (price: number) =>
+    isCorn ? `${price.toFixed(2)}\u00A2` : `$${price.toFixed(3)}`;
+  const formatChange = (change: number) =>
+    isCorn
+      ? `${change >= 0 ? "+" : ""}${change.toFixed(2)}\u00A2`
+      : `${change >= 0 ? "+" : ""}${change.toFixed(3)}`;
 
   return (
     <Card id="futures">
@@ -62,8 +74,8 @@ export function FuturesPrices({ initialData }: FuturesPricesProps) {
             <LineChart className="w-5 h-5 text-blue-600" />
           </div>
           <div>
-            <CardTitle>CME Cattle Futures</CardTitle>
-            <CardDescription>Live cattle and feeder cattle contracts</CardDescription>
+            <CardTitle>CME Futures</CardTitle>
+            <CardDescription>Live cattle, feeder cattle, and corn contracts</CardDescription>
           </div>
         </div>
       </CardHeader>
@@ -98,6 +110,16 @@ export function FuturesPrices({ initialData }: FuturesPricesProps) {
               >
                 Feeder Cattle (GF)
               </button>
+              <button
+                onClick={() => setActiveTab("corn")}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  activeTab === "corn"
+                    ? "bg-cornhusker-600 text-white"
+                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                }`}
+              >
+                Corn (ZC)
+              </button>
             </div>
 
             {/* Front Month Highlight */}
@@ -116,7 +138,7 @@ export function FuturesPrices({ initialData }: FuturesPricesProps) {
                     </p>
                     <div className="flex items-baseline gap-3">
                       <span className="text-3xl font-bold text-gray-900">
-                        ${frontMonth.lastPrice.toFixed(3)}
+                        {formatPrice(frontMonth.lastPrice)}
                       </span>
                       <div className="flex items-center gap-1">
                         {frontMonth.change >= 0 ? (
@@ -131,8 +153,7 @@ export function FuturesPrices({ initialData }: FuturesPricesProps) {
                               : "text-cornhusker-600"
                           }`}
                         >
-                          {frontMonth.change >= 0 ? "+" : ""}
-                          {frontMonth.change.toFixed(3)} (
+                          {formatChange(frontMonth.change)} (
                           {frontMonth.changePercent.toFixed(2)}%)
                         </span>
                       </div>
@@ -141,15 +162,15 @@ export function FuturesPrices({ initialData }: FuturesPricesProps) {
                   <div className="flex gap-6 text-sm">
                     <div>
                       <p className="text-gray-500">Open</p>
-                      <p className="font-medium">${frontMonth.open.toFixed(3)}</p>
+                      <p className="font-medium">{formatPrice(frontMonth.open)}</p>
                     </div>
                     <div>
                       <p className="text-gray-500">High</p>
-                      <p className="font-medium">${frontMonth.high.toFixed(3)}</p>
+                      <p className="font-medium">{formatPrice(frontMonth.high)}</p>
                     </div>
                     <div>
                       <p className="text-gray-500">Low</p>
-                      <p className="font-medium">${frontMonth.low.toFixed(3)}</p>
+                      <p className="font-medium">{formatPrice(frontMonth.low)}</p>
                     </div>
                     <div>
                       <p className="text-gray-500">Volume</p>
@@ -193,7 +214,7 @@ export function FuturesPrices({ initialData }: FuturesPricesProps) {
                         </div>
                       </td>
                       <td className="px-4 py-3 text-right font-semibold text-gray-900">
-                        ${contract.lastPrice.toFixed(3)}
+                        {formatPrice(contract.lastPrice)}
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-2">
@@ -204,20 +225,19 @@ export function FuturesPrices({ initialData }: FuturesPricesProps) {
                                 : "text-cornhusker-600"
                             }
                           >
-                            {contract.change >= 0 ? "+" : ""}
-                            {contract.change.toFixed(3)}
+                            {formatChange(contract.change)}
                           </span>
                           <TrendBadge value={contract.changePercent} />
                         </div>
                       </td>
                       <td className="px-4 py-3 text-right text-gray-600">
-                        ${contract.open.toFixed(3)}
+                        {formatPrice(contract.open)}
                       </td>
                       <td className="px-4 py-3 text-right text-gray-600">
-                        ${contract.high.toFixed(3)}
+                        {formatPrice(contract.high)}
                       </td>
                       <td className="px-4 py-3 text-right text-gray-600">
-                        ${contract.low.toFixed(3)}
+                        {formatPrice(contract.low)}
                       </td>
                       <td className="px-4 py-3 text-right text-gray-600">
                         {contract.volume.toLocaleString()}

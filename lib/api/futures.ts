@@ -44,10 +44,13 @@ function generateContractSymbols(
 
   // Live Cattle trades: Feb (G), Apr (J), Jun (M), Aug (Q), Oct (V), Dec (Z)
   // Feeder Cattle trades: Jan (F), Mar (H), Apr (J), May (K), Aug (Q), Sep (U), Oct (V), Nov (X)
+  // Corn trades: Mar (H), May (K), Jul (N), Sep (U), Dec (Z)
   const lcMonths = ["G", "J", "M", "Q", "V", "Z"];
   const fcMonths = ["F", "H", "J", "K", "Q", "U", "V", "X"];
+  const cornMonths = ["H", "K", "N", "U", "Z"];
 
-  const tradingMonths = baseSymbol === "LE" ? lcMonths : fcMonths;
+  const tradingMonths =
+    baseSymbol === "LE" ? lcMonths : baseSymbol === "ZC" ? cornMonths : fcMonths;
   let count = 0;
 
   for (let yearOffset = 0; yearOffset <= 2 && count < monthsAhead; yearOffset++) {
@@ -68,12 +71,16 @@ function generateContractSymbols(
 // Fetch from a free delayed data source (simulated structure)
 // In production, replace with actual API calls
 export async function fetchFuturesData(): Promise<FuturesData> {
-  const liveCattle = await fetchLiveCattleFutures();
-  const feederCattle = await fetchFeederCattleFutures();
+  const [liveCattle, feederCattle, corn] = await Promise.all([
+    fetchLiveCattleFutures(),
+    fetchFeederCattleFutures(),
+    fetchCornFutures(),
+  ]);
 
   return {
     liveCattle,
     feederCattle,
+    corn,
     lastUpdated: new Date().toISOString(),
   };
 }
@@ -192,6 +199,61 @@ async function fetchFeederCattleFutures(): Promise<FuturesContract[]> {
   } catch (error) {
     console.error("Error fetching feeder cattle futures:", error);
     return getMockFeederCattleData();
+  }
+}
+
+async function fetchCornFutures(): Promise<FuturesContract[]> {
+  try {
+    const contracts: FuturesContract[] = [];
+    const symbols = generateContractSymbols("ZC", 4);
+
+    const frontMonthData = await fetchYahooQuote("ZC=F");
+
+    if (frontMonthData && frontMonthData.lastPrice !== undefined) {
+      const basePrice = frontMonthData.lastPrice;
+      const baseChange = frontMonthData.change ?? 0;
+      const baseChangePercent = frontMonthData.changePercent ?? 0;
+      const baseOpen = frontMonthData.open ?? basePrice;
+      const baseHigh = frontMonthData.high ?? basePrice;
+      const baseLow = frontMonthData.low ?? basePrice;
+      const baseVolume = frontMonthData.volume ?? 0;
+
+      contracts.push({
+        symbol: symbols[0] || "ZC",
+        name: "Corn",
+        contractMonth: getContractMonth(symbols[0]),
+        lastPrice: basePrice,
+        change: baseChange,
+        changePercent: baseChangePercent,
+        open: baseOpen,
+        high: baseHigh,
+        low: baseLow,
+        volume: baseVolume,
+        lastUpdated: frontMonthData.lastUpdated || new Date().toISOString(),
+      });
+
+      for (let i = 1; i < Math.min(4, symbols.length); i++) {
+        const spread = (i * 3 + Math.random() * 2) * (Math.random() > 0.5 ? 1 : -1);
+        contracts.push({
+          symbol: symbols[i],
+          name: "Corn",
+          contractMonth: getContractMonth(symbols[i]),
+          lastPrice: basePrice + spread,
+          change: baseChange * (0.8 + Math.random() * 0.4),
+          changePercent: baseChangePercent * (0.8 + Math.random() * 0.4),
+          open: baseOpen + spread,
+          high: baseHigh + spread,
+          low: baseLow + spread,
+          volume: Math.floor(baseVolume * (0.2 + Math.random() * 0.4)),
+          lastUpdated: new Date().toISOString(),
+        });
+      }
+    }
+
+    return contracts.length > 0 ? contracts : getMockCornData();
+  } catch (error) {
+    console.error("Error fetching corn futures:", error);
+    return getMockCornData();
   }
 }
 
@@ -362,6 +424,64 @@ function getMockFeederCattleData(): FuturesContract[] {
       high: basePrice - 1.2,
       low: basePrice - 2.8,
       volume: 3245,
+      lastUpdated: new Date().toISOString(),
+    },
+  ];
+}
+
+function getMockCornData(): FuturesContract[] {
+  const basePrice = 458.25;
+  return [
+    {
+      symbol: "ZCK26",
+      name: "Corn",
+      contractMonth: "May 2026",
+      lastPrice: basePrice,
+      change: -2.75,
+      changePercent: -0.60,
+      open: basePrice + 1.5,
+      high: basePrice + 3.0,
+      low: basePrice - 4.0,
+      volume: 142356,
+      lastUpdated: new Date().toISOString(),
+    },
+    {
+      symbol: "ZCN26",
+      name: "Corn",
+      contractMonth: "July 2026",
+      lastPrice: basePrice + 4.5,
+      change: -2.25,
+      changePercent: -0.49,
+      open: basePrice + 5.5,
+      high: basePrice + 7.0,
+      low: basePrice + 2.0,
+      volume: 98432,
+      lastUpdated: new Date().toISOString(),
+    },
+    {
+      symbol: "ZCU26",
+      name: "Corn",
+      contractMonth: "September 2026",
+      lastPrice: basePrice - 8.0,
+      change: -1.75,
+      changePercent: -0.39,
+      open: basePrice - 7.0,
+      high: basePrice - 5.5,
+      low: basePrice - 10.0,
+      volume: 45678,
+      lastUpdated: new Date().toISOString(),
+    },
+    {
+      symbol: "ZCZ26",
+      name: "Corn",
+      contractMonth: "December 2026",
+      lastPrice: basePrice - 12.5,
+      change: -1.50,
+      changePercent: -0.34,
+      open: basePrice - 11.5,
+      high: basePrice - 10.0,
+      low: basePrice - 14.0,
+      volume: 32145,
       lastUpdated: new Date().toISOString(),
     },
   ];
