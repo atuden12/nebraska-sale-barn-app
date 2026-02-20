@@ -8,6 +8,7 @@
  * - 3237 (AMS_3237): Wyoming-Nebraska Direct Cattle Report
  */
 
+import { z } from "zod";
 import {
   AuctionReport,
   AuctionSale,
@@ -16,6 +17,13 @@ import {
 } from "../types";
 
 const MARS_BASE = "https://marsapi.ams.usda.gov/services/v1.2";
+
+// Zod schemas for MARS API response validation
+const MarsRowsSchema = z.array(z.record(z.any()));
+const MarsResponseSchema = z.union([
+  MarsRowsSchema,
+  z.object({ results: MarsRowsSchema }).passthrough(),
+]);
 
 function getMarsApiKey(): string {
   const key = process.env.USDA_MARKET_NEWS_API_KEY?.trim();
@@ -34,7 +42,7 @@ function buildAuthHeaders(apiKey: string): HeadersInit {
   return headers;
 }
 
-async function marsApiFetch<T>(slugId: number): Promise<T | null> {
+async function marsApiFetch(slugId: number): Promise<Record<string, any>[] | null> {
   const apiKey = getMarsApiKey();
   const headers = buildAuthHeaders(apiKey);
   const url = `${MARS_BASE}/reports/${slugId}`;
@@ -50,8 +58,16 @@ async function marsApiFetch<T>(slugId: number): Promise<T | null> {
     }
 
     const json = await response.json();
-    console.log(`[v0] MARS ${slugId} success, records=${Array.isArray(json) ? json.length : "obj"}`);
-    return json;
+    const parsed = MarsResponseSchema.safeParse(json);
+
+    if (!parsed.success) {
+      console.error(`[v0] MARS ${slugId} schema mismatch:`, parsed.error.message);
+      return null;
+    }
+
+    const rows = Array.isArray(parsed.data) ? parsed.data : parsed.data.results;
+    console.log(`[v0] MARS ${slugId} success, records=${rows.length}`);
+    return rows;
   } catch (error) {
     console.error(`[v0] MARS ${slugId} fetch error:`, error);
     return null;
@@ -61,16 +77,16 @@ async function marsApiFetch<T>(slugId: number): Promise<T | null> {
 // --- Cash Prices: Wyoming-Nebraska Direct Cattle Report (slug_id 3237) ---
 
 export async function fetchNebraskaDirectSlaughter(): Promise<CashPriceReport | null> {
-  const data = await marsApiFetch<any[]>(3237);
+  const data = await marsApiFetch(3237);
 
-  if (!data || !Array.isArray(data) || data.length === 0) {
+  if (!data || data.length === 0) {
     return null;
   }
 
   const prices: CashPrice[] = data
-    .filter((item) => parseFloat(item.avg_price) > 0)
+    .filter((item: any) => parseFloat(item.avg_price) > 0)
     .slice(0, 20)
-    .map((item) => ({
+    .map((item: any) => ({
       reportDate: item.report_date || new Date().toISOString(),
       priceType: mapPriceType(item.category || item.class || ""),
       region: item.market_location_name || item.market_location_state || "Nebraska",
@@ -98,9 +114,9 @@ export async function fetch5AreaWeeklyPrices(): Promise<CashPriceReport | null> 
 // --- Auctions: Nebraska Weekly Livestock Auction Summary (slug_id 1860) ---
 
 export async function fetchNebraskaAuctions(): Promise<AuctionReport[]> {
-  const data = await marsApiFetch<any[]>(1860);
+  const data = await marsApiFetch(1860);
 
-  if (!data || !Array.isArray(data) || data.length === 0) {
+  if (!data || data.length === 0) {
     return [];
   }
 
@@ -114,11 +130,11 @@ export async function fetchNebraskaAuctions(): Promise<AuctionReport[]> {
 
   const reports: AuctionReport[] = [];
 
-  for (const [market, items] of byMarket) {
+  byMarket.forEach((items: any[], market: string) => {
     const sales: AuctionSale[] = items
-      .filter((item) => parseFloat(item.avg_price) > 0)
+      .filter((item: any) => parseFloat(item.avg_price) > 0)
       .slice(0, 50)
-      .map((item) => ({
+      .map((item: any) => ({
         reportDate: item.report_date || new Date().toISOString(),
         marketLocation: item.market_location_name || "Nebraska",
         headCount: parseInt(item.head_count) || 0,
@@ -148,7 +164,7 @@ export async function fetchNebraskaAuctions(): Promise<AuctionReport[]> {
         commentary: items[0]?.report_narrative || items[0]?.comments_commodity,
       });
     }
-  }
+  });
 
   return reports;
 }

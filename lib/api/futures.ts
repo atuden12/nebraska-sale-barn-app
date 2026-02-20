@@ -1,20 +1,16 @@
 /**
- * Futures Data Fetching
+ * Futures Data Fetching - Front Month Only
  *
- * CME Live Cattle and Feeder Cattle futures data.
- *
- * Note: Real-time CME data requires paid subscriptions.
- * This implementation uses publicly available delayed data
- * and free API sources where possible.
- *
- * Options for production:
- * 1. CME DataMine API (paid): https://www.cmegroup.com/market-data/datamine-api.html
- * 2. Barchart OnDemand (paid): https://www.barchart.com/ondemand
- * 3. Yahoo Finance (free, delayed): Limited but available
- * 4. Alpha Vantage (free tier): Commodities endpoint
+ * CME Live Cattle (LE=F) and Feeder Cattle (GF=F) front-month quotes.
+ * Uses Yahoo Finance delayed data (free, 15-20min delay).
  */
 
 import { FuturesContract, FuturesData } from "../types";
+
+export interface FuturesFetchResult {
+  data: FuturesData;
+  source: "live" | "demo";
+}
 
 // Contract month codes
 const MONTH_CODES: Record<string, string> = {
@@ -32,166 +28,94 @@ const MONTH_CODES: Record<string, string> = {
   Z: "December",
 };
 
-// Generate contract symbols for current and upcoming months
-function generateContractSymbols(
-  baseSymbol: string,
-  monthsAhead: number = 6
-): string[] {
-  const symbols: string[] = [];
-  const now = new Date();
-  const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth();
+// Fetch front-month only futures data
+export async function fetchFuturesData(): Promise<FuturesFetchResult> {
+  const [liveCattle, feederCattle] = await Promise.all([
+    fetchLiveCattleFutures(),
+    fetchFeederCattleFutures(),
+  ]);
 
-  // Live Cattle trades: Feb (G), Apr (J), Jun (M), Aug (Q), Oct (V), Dec (Z)
-  // Feeder Cattle trades: Jan (F), Mar (H), Apr (J), May (K), Aug (Q), Sep (U), Oct (V), Nov (X)
-  const lcMonths = ["G", "J", "M", "Q", "V", "Z"];
-  const fcMonths = ["F", "H", "J", "K", "Q", "U", "V", "X"];
-
-  const tradingMonths = baseSymbol === "LE" ? lcMonths : fcMonths;
-  let count = 0;
-
-  for (let yearOffset = 0; yearOffset <= 2 && count < monthsAhead; yearOffset++) {
-    const year = currentYear + yearOffset;
-    for (const monthCode of tradingMonths) {
-      const monthIndex = Object.keys(MONTH_CODES).indexOf(monthCode);
-      if (yearOffset === 0 && monthIndex < currentMonth) continue;
-
-      symbols.push(`${baseSymbol}${monthCode}${year % 100}`);
-      count++;
-      if (count >= monthsAhead) break;
-    }
-  }
-
-  return symbols;
-}
-
-// Fetch from a free delayed data source (simulated structure)
-// In production, replace with actual API calls
-export async function fetchFuturesData(): Promise<FuturesData> {
-  const liveCattle = await fetchLiveCattleFutures();
-  const feederCattle = await fetchFeederCattleFutures();
+  const isLive = liveCattle.source === "live" || feederCattle.source === "live";
 
   return {
-    liveCattle,
-    feederCattle,
-    lastUpdated: new Date().toISOString(),
+    data: {
+      liveCattle: liveCattle.contracts,
+      feederCattle: feederCattle.contracts,
+      lastUpdated: new Date().toISOString(),
+    },
+    source: isLive ? "live" : "demo",
   };
 }
 
-async function fetchLiveCattleFutures(): Promise<FuturesContract[]> {
-  // Try to fetch from Yahoo Finance or similar free source
-  // Yahoo symbols: LE=F for front month, LEG24.CME for specific contracts
-
+async function fetchLiveCattleFutures(): Promise<{
+  contracts: FuturesContract[];
+  source: "live" | "demo";
+}> {
   try {
-    // Using a proxy-friendly approach
-    const contracts: FuturesContract[] = [];
-    const symbols = generateContractSymbols("LE", 4);
+    const quote = await fetchYahooQuote("LE=F");
 
-    // For demo purposes, we'll fetch what we can and generate reasonable estimates
-    // In production, use proper API
-    const frontMonthData = await fetchYahooQuote("LE=F");
-
-    if (frontMonthData && frontMonthData.lastPrice !== undefined) {
-      const basePrice = frontMonthData.lastPrice;
-      const baseChange = frontMonthData.change ?? 0;
-      const baseChangePercent = frontMonthData.changePercent ?? 0;
-      const baseOpen = frontMonthData.open ?? basePrice;
-      const baseHigh = frontMonthData.high ?? basePrice;
-      const baseLow = frontMonthData.low ?? basePrice;
-      const baseVolume = frontMonthData.volume ?? 0;
-
-      contracts.push({
-        symbol: symbols[0] || "LE",
-        name: "Live Cattle",
-        contractMonth: getContractMonth(symbols[0]),
-        lastPrice: basePrice,
-        change: baseChange,
-        changePercent: baseChangePercent,
-        open: baseOpen,
-        high: baseHigh,
-        low: baseLow,
-        volume: baseVolume,
-        lastUpdated: frontMonthData.lastUpdated || new Date().toISOString(),
-      });
-
-      // Estimate deferred months based on typical contango/backwardation
-      for (let i = 1; i < Math.min(4, symbols.length); i++) {
-        const spread = (i * 0.5 + Math.random() * 0.5) * (Math.random() > 0.5 ? 1 : -1);
-        contracts.push({
-          symbol: symbols[i],
-          name: "Live Cattle",
-          contractMonth: getContractMonth(symbols[i]),
-          lastPrice: basePrice + spread,
-          change: baseChange * (0.8 + Math.random() * 0.4),
-          changePercent: baseChangePercent * (0.8 + Math.random() * 0.4),
-          open: baseOpen + spread,
-          high: baseHigh + spread,
-          low: baseLow + spread,
-          volume: Math.floor(baseVolume * (0.3 + Math.random() * 0.4)),
-          lastUpdated: new Date().toISOString(),
-        });
-      }
+    if (quote && quote.lastPrice !== undefined && quote.lastPrice > 0) {
+      const symbol = getFrontMonthSymbol("LE");
+      return {
+        contracts: [
+          {
+            symbol,
+            name: "Live Cattle",
+            contractMonth: getContractMonth(symbol),
+            lastPrice: quote.lastPrice,
+            change: quote.change ?? 0,
+            changePercent: quote.changePercent ?? 0,
+            open: quote.open ?? quote.lastPrice,
+            high: quote.high ?? quote.lastPrice,
+            low: quote.low ?? quote.lastPrice,
+            volume: quote.volume ?? 0,
+            lastUpdated: quote.lastUpdated || new Date().toISOString(),
+          },
+        ],
+        source: "live",
+      };
     }
 
-    return contracts.length > 0 ? contracts : getMockLiveCattleData();
+    return { contracts: getMockLiveCattleData(), source: "demo" };
   } catch (error) {
-    console.error("Error fetching live cattle futures:", error);
-    return getMockLiveCattleData();
+    console.error("[v0] Error fetching live cattle futures:", error);
+    return { contracts: getMockLiveCattleData(), source: "demo" };
   }
 }
 
-async function fetchFeederCattleFutures(): Promise<FuturesContract[]> {
+async function fetchFeederCattleFutures(): Promise<{
+  contracts: FuturesContract[];
+  source: "live" | "demo";
+}> {
   try {
-    const contracts: FuturesContract[] = [];
-    const symbols = generateContractSymbols("GF", 4);
+    const quote = await fetchYahooQuote("GF=F");
 
-    const frontMonthData = await fetchYahooQuote("GF=F");
-
-    if (frontMonthData && frontMonthData.lastPrice !== undefined) {
-      const basePrice = frontMonthData.lastPrice;
-      const baseChange = frontMonthData.change ?? 0;
-      const baseChangePercent = frontMonthData.changePercent ?? 0;
-      const baseOpen = frontMonthData.open ?? basePrice;
-      const baseHigh = frontMonthData.high ?? basePrice;
-      const baseLow = frontMonthData.low ?? basePrice;
-      const baseVolume = frontMonthData.volume ?? 0;
-
-      contracts.push({
-        symbol: symbols[0] || "GF",
-        name: "Feeder Cattle",
-        contractMonth: getContractMonth(symbols[0]),
-        lastPrice: basePrice,
-        change: baseChange,
-        changePercent: baseChangePercent,
-        open: baseOpen,
-        high: baseHigh,
-        low: baseLow,
-        volume: baseVolume,
-        lastUpdated: frontMonthData.lastUpdated || new Date().toISOString(),
-      });
-
-      for (let i = 1; i < Math.min(4, symbols.length); i++) {
-        const spread = (i * 0.75 + Math.random() * 0.5) * (Math.random() > 0.5 ? 1 : -1);
-        contracts.push({
-          symbol: symbols[i],
-          name: "Feeder Cattle",
-          contractMonth: getContractMonth(symbols[i]),
-          lastPrice: basePrice + spread,
-          change: baseChange * (0.8 + Math.random() * 0.4),
-          changePercent: baseChangePercent * (0.8 + Math.random() * 0.4),
-          open: baseOpen + spread,
-          high: baseHigh + spread,
-          low: baseLow + spread,
-          volume: Math.floor(baseVolume * (0.2 + Math.random() * 0.3)),
-          lastUpdated: new Date().toISOString(),
-        });
-      }
+    if (quote && quote.lastPrice !== undefined && quote.lastPrice > 0) {
+      const symbol = getFrontMonthSymbol("GF");
+      return {
+        contracts: [
+          {
+            symbol,
+            name: "Feeder Cattle",
+            contractMonth: getContractMonth(symbol),
+            lastPrice: quote.lastPrice,
+            change: quote.change ?? 0,
+            changePercent: quote.changePercent ?? 0,
+            open: quote.open ?? quote.lastPrice,
+            high: quote.high ?? quote.lastPrice,
+            low: quote.low ?? quote.lastPrice,
+            volume: quote.volume ?? 0,
+            lastUpdated: quote.lastUpdated || new Date().toISOString(),
+          },
+        ],
+        source: "live",
+      };
     }
 
-    return contracts.length > 0 ? contracts : getMockFeederCattleData();
+    return { contracts: getMockFeederCattleData(), source: "demo" };
   } catch (error) {
-    console.error("Error fetching feeder cattle futures:", error);
-    return getMockFeederCattleData();
+    console.error("[v0] Error fetching feeder cattle futures:", error);
+    return { contracts: getMockFeederCattleData(), source: "demo" };
   }
 }
 
@@ -200,14 +124,11 @@ async function fetchYahooQuote(
   symbol: string
 ): Promise<Partial<FuturesContract> | null> {
   try {
-    // Yahoo Finance v8 API (often works without auth for delayed quotes)
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=5d`;
 
     const response = await fetch(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0",
-      },
-      next: { revalidate: 900 }, // 15-minute cache for futures
+      headers: { "User-Agent": "Mozilla/5.0" },
+      next: { revalidate: 900 }, // 15-minute cache
     });
 
     if (!response.ok) {
@@ -225,143 +146,88 @@ async function fetchYahooQuote(
 
     const lastIndex = (quote?.close?.length || 1) - 1;
     const prevClose = meta.chartPreviousClose || meta.previousClose || 0;
-    const currentPrice = meta.regularMarketPrice || quote?.close?.[lastIndex] || 0;
+    const currentPrice =
+      meta.regularMarketPrice || quote?.close?.[lastIndex] || 0;
 
     return {
       lastPrice: currentPrice,
       change: currentPrice - prevClose,
-      changePercent: prevClose > 0 ? ((currentPrice - prevClose) / prevClose) * 100 : 0,
-      open: quote?.open?.[lastIndex] || meta.regularMarketOpen || currentPrice,
-      high: quote?.high?.[lastIndex] || meta.regularMarketDayHigh || currentPrice,
-      low: quote?.low?.[lastIndex] || meta.regularMarketDayLow || currentPrice,
+      changePercent:
+        prevClose > 0 ? ((currentPrice - prevClose) / prevClose) * 100 : 0,
+      open:
+        quote?.open?.[lastIndex] || meta.regularMarketOpen || currentPrice,
+      high:
+        quote?.high?.[lastIndex] || meta.regularMarketDayHigh || currentPrice,
+      low:
+        quote?.low?.[lastIndex] || meta.regularMarketDayLow || currentPrice,
       volume: quote?.volume?.[lastIndex] || meta.regularMarketVolume || 0,
       lastUpdated: new Date().toISOString(),
     };
   } catch (error) {
-    console.error(`Error fetching Yahoo quote for ${symbol}:`, error);
+    console.error(`[v0] Error fetching Yahoo quote for ${symbol}:`, error);
     return null;
   }
+}
+
+function getFrontMonthSymbol(base: string): string {
+  const now = new Date();
+  const currentMonth = now.getMonth();
+  const year = now.getFullYear() % 100;
+
+  const lcMonths = ["G", "J", "M", "Q", "V", "Z"];
+  const fcMonths = ["F", "H", "J", "K", "Q", "U", "V", "X"];
+  const months = base === "LE" ? lcMonths : fcMonths;
+  const monthIndices = Object.keys(MONTH_CODES);
+
+  for (const code of months) {
+    const idx = monthIndices.indexOf(code);
+    if (idx >= currentMonth) {
+      return `${base}${code}${year}`;
+    }
+  }
+  // Wrap to next year
+  return `${base}${months[0]}${year + 1}`;
 }
 
 function getContractMonth(symbol: string): string {
   if (!symbol || symbol.length < 3) return "Unknown";
   const monthCode = symbol.charAt(symbol.length - 3);
-  const year = symbol.slice(-2);
-  return `${MONTH_CODES[monthCode] || "Unknown"} 20${year}`;
+  const yr = symbol.slice(-2);
+  return `${MONTH_CODES[monthCode] || "Unknown"} 20${yr}`;
 }
 
-// Mock data for when APIs are unavailable
+// Front-month-only demo data
 function getMockLiveCattleData(): FuturesContract[] {
-  const basePrice = 185.5;
   return [
     {
-      symbol: "LEG25",
+      symbol: getFrontMonthSymbol("LE"),
       name: "Live Cattle",
-      contractMonth: "February 2025",
-      lastPrice: basePrice,
+      contractMonth: getContractMonth(getFrontMonthSymbol("LE")),
+      lastPrice: 185.575,
       change: 0.825,
       changePercent: 0.45,
-      open: basePrice - 0.5,
-      high: basePrice + 1.2,
-      low: basePrice - 0.8,
+      open: 185.0,
+      high: 186.25,
+      low: 184.75,
       volume: 24532,
-      lastUpdated: new Date().toISOString(),
-    },
-    {
-      symbol: "LEJ25",
-      name: "Live Cattle",
-      contractMonth: "April 2025",
-      lastPrice: basePrice + 1.25,
-      change: 0.65,
-      changePercent: 0.35,
-      open: basePrice + 0.75,
-      high: basePrice + 2.0,
-      low: basePrice + 0.5,
-      volume: 18234,
-      lastUpdated: new Date().toISOString(),
-    },
-    {
-      symbol: "LEM25",
-      name: "Live Cattle",
-      contractMonth: "June 2025",
-      lastPrice: basePrice + 2.1,
-      change: 0.45,
-      changePercent: 0.24,
-      open: basePrice + 1.5,
-      high: basePrice + 2.8,
-      low: basePrice + 1.3,
-      volume: 12456,
-      lastUpdated: new Date().toISOString(),
-    },
-    {
-      symbol: "LEQ25",
-      name: "Live Cattle",
-      contractMonth: "August 2025",
-      lastPrice: basePrice + 1.8,
-      change: 0.35,
-      changePercent: 0.19,
-      open: basePrice + 1.2,
-      high: basePrice + 2.5,
-      low: basePrice + 1.0,
-      volume: 8234,
       lastUpdated: new Date().toISOString(),
     },
   ];
 }
 
 function getMockFeederCattleData(): FuturesContract[] {
-  const basePrice = 252.75;
   return [
     {
-      symbol: "GFF25",
+      symbol: getFrontMonthSymbol("GF"),
       name: "Feeder Cattle",
-      contractMonth: "January 2025",
-      lastPrice: basePrice,
+      contractMonth: getContractMonth(getFrontMonthSymbol("GF")),
+      lastPrice: 252.75,
       change: 1.125,
       changePercent: 0.45,
-      open: basePrice - 0.8,
-      high: basePrice + 1.5,
-      low: basePrice - 1.0,
+      open: 251.75,
+      high: 253.5,
+      low: 251.25,
       volume: 8432,
-      lastUpdated: new Date().toISOString(),
-    },
-    {
-      symbol: "GFH25",
-      name: "Feeder Cattle",
-      contractMonth: "March 2025",
-      lastPrice: basePrice - 0.5,
-      change: 0.875,
-      changePercent: 0.35,
-      open: basePrice - 1.2,
-      high: basePrice + 0.8,
-      low: basePrice - 1.5,
-      volume: 6234,
-      lastUpdated: new Date().toISOString(),
-    },
-    {
-      symbol: "GFJ25",
-      name: "Feeder Cattle",
-      contractMonth: "April 2025",
-      lastPrice: basePrice - 1.25,
-      change: 0.65,
-      changePercent: 0.26,
-      open: basePrice - 2.0,
-      high: basePrice - 0.5,
-      low: basePrice - 2.2,
-      volume: 4567,
-      lastUpdated: new Date().toISOString(),
-    },
-    {
-      symbol: "GFK25",
-      name: "Feeder Cattle",
-      contractMonth: "May 2025",
-      lastPrice: basePrice - 2.0,
-      change: 0.45,
-      changePercent: 0.18,
-      open: basePrice - 2.5,
-      high: basePrice - 1.2,
-      low: basePrice - 2.8,
-      volume: 3245,
       lastUpdated: new Date().toISOString(),
     },
   ];
@@ -376,9 +242,7 @@ export async function fetchFuturesPriceHistory(
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=${days}d`;
 
     const response = await fetch(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0",
-      },
+      headers: { "User-Agent": "Mozilla/5.0" },
       next: { revalidate: 3600 },
     });
 
@@ -391,12 +255,14 @@ export async function fetchFuturesPriceHistory(
     const timestamps = result?.timestamp || [];
     const closes = result?.indicators?.quote?.[0]?.close || [];
 
-    return timestamps.map((ts: number, i: number) => ({
-      date: new Date(ts * 1000).toISOString().split("T")[0],
-      price: closes[i] || 0,
-    })).filter((p: { price: number }) => p.price > 0);
+    return timestamps
+      .map((ts: number, i: number) => ({
+        date: new Date(ts * 1000).toISOString().split("T")[0],
+        price: closes[i] || 0,
+      }))
+      .filter((p: { price: number }) => p.price > 0);
   } catch (error) {
-    console.error("Error fetching price history:", error);
+    console.error("[v0] Error fetching price history:", error);
     return [];
   }
 }

@@ -1,147 +1,60 @@
-// Test NASS Quick Stats API with different parameter combinations
-const NASS_BASE = "https://quickstats.nass.usda.gov/api/api_GET";
-const key = process.env.USDA_NASS_API_KEY?.trim();
-const year = new Date().getFullYear();
+var key = (process.env.USDA_NASS_API_KEY || "").trim();
+console.log("Key present:", !!key, "len:", key.length);
 
-async function testQuery(label, params) {
-  const qs = new URLSearchParams({ key, format: "JSON", ...params });
-  const url = `${NASS_BASE}?${qs}`;
-  console.log(`\n--- ${label} ---`);
-  try {
-    const res = await fetch(url);
-    const text = await res.text();
-    if (!res.ok) {
-      console.log(`  STATUS: ${res.status}`);
-      console.log(`  ERROR: ${text.substring(0, 200)}`);
-      return;
+async function run() {
+  if (!key) { console.log("No key"); return; }
+
+  var base = "https://quickstats.nass.usda.gov/api";
+
+  // 1) Find slaughter-related statisticcat_desc for CATTLE
+  var r1 = await fetch(base + "/get_param_values?key=" + key + "&param=statisticcat_desc&commodity_desc=CATTLE");
+  var j1 = await r1.json();
+  var all = j1.statisticcat_desc || [];
+  var slaughter = all.filter(function(v) { return v.toLowerCase().indexOf("slaughter") >= 0; });
+  console.log("Slaughter stats:", JSON.stringify(slaughter));
+
+  // 2) Find commodities with SLAUGHTER
+  var r2 = await fetch(base + "/get_param_values?key=" + key + "&param=commodity_desc&statisticcat_desc=SLAUGHTER");
+  var j2 = await r2.json();
+  console.log("Commodities with SLAUGHTER:", JSON.stringify((j2.commodity_desc || []).slice(0, 20)));
+
+  // 3) Try CATTLE / INVENTORY (known good query)
+  var r3 = await fetch(base + "/api_GET?key=" + key + "&format=JSON&commodity_desc=CATTLE&statisticcat_desc=INVENTORY&freq_desc=ANNUAL&year=2024&agg_level_desc=NATIONAL");
+  console.log("CATTLE INVENTORY status:", r3.status);
+  if (r3.ok) {
+    var j3 = await r3.json();
+    console.log("  records:", (j3.data || []).length);
+    if (j3.data && j3.data[0]) console.log("  sample:", JSON.stringify(j3.data[0]).substring(0, 300));
+  }
+
+  // 4) Try CATTLE / SALES FOR SLAUGHTER / ANNUAL / 2024
+  var r4 = await fetch(base + "/api_GET?key=" + key + "&format=JSON&commodity_desc=CATTLE&statisticcat_desc=SALES%20FOR%20SLAUGHTER&freq_desc=ANNUAL&year=2024&agg_level_desc=NATIONAL");
+  console.log("CATTLE SALES FOR SLAUGHTER status:", r4.status);
+  var t4 = await r4.text();
+  console.log("  body:", t4.substring(0, 300));
+
+  // 5) Try CATTLE / SLAUGHTERED / ANNUAL / 2024
+  var r5 = await fetch(base + "/api_GET?key=" + key + "&format=JSON&commodity_desc=CATTLE&statisticcat_desc=SLAUGHTERED&freq_desc=ANNUAL&year=2024");
+  console.log("CATTLE SLAUGHTERED status:", r5.status);
+  var t5 = await r5.text();
+  console.log("  body:", t5.substring(0, 300));
+
+  // 6) If commodities found with SLAUGHTER, try first cattle one
+  var cattleComms = (j2.commodity_desc || []).filter(function(c) { return c.indexOf("CATTLE") >= 0; });
+  for (var i = 0; i < cattleComms.length; i++) {
+    var comm = cattleComms[i];
+    var r6f = await fetch(base + "/get_param_values?key=" + key + "&param=freq_desc&commodity_desc=" + encodeURIComponent(comm) + "&statisticcat_desc=SLAUGHTER");
+    var j6f = await r6f.json();
+    console.log(comm + " SLAUGHTER freqs:", JSON.stringify(j6f.freq_desc));
+    
+    var freqs = j6f.freq_desc || [];
+    for (var f = 0; f < Math.min(freqs.length, 2); f++) {
+      var r6 = await fetch(base + "/api_GET?key=" + key + "&format=JSON&commodity_desc=" + encodeURIComponent(comm) + "&statisticcat_desc=SLAUGHTER&freq_desc=" + encodeURIComponent(freqs[f]) + "&year=2025");
+      console.log("  " + comm + "/" + freqs[f] + " status:", r6.status);
+      var t6 = await r6.text();
+      console.log("  body:", t6.substring(0, 300));
     }
-    const json = JSON.parse(text);
-    const data = json.data || [];
-    console.log(`  STATUS: ${res.status}, records: ${data.length}`);
-    if (data.length > 0) {
-      console.log(`  FIRST RECORD KEYS:`, Object.keys(data[0]).join(", "));
-      console.log(`  SAMPLE:`, JSON.stringify(data[0]).substring(0, 300));
-    }
-  } catch (e) {
-    console.log(`  EXCEPTION: ${e.message}`);
   }
 }
 
-async function main() {
-  console.log("NASS API key:", key ? `${key.substring(0, 4)}... (len=${key.length})` : "MISSING");
-
-  // First check what param values are valid for cattle slaughter
-  // Test 1: Minimal query - just cattle slaughter
-  await testQuery("Test 1: Minimal cattle slaughter", {
-    commodity_desc: "CATTLE",
-    statisticcat_desc: "SLAUGHTER",
-    year: `${year}`,
-  });
-
-  // Test 2: Same but with fewer constraints
-  await testQuery("Test 2: Cattle slaughter with source_desc", {
-    source_desc: "SURVEY",
-    commodity_desc: "CATTLE",
-    statisticcat_desc: "SLAUGHTER",
-    year: `${year}`,
-  });
-
-  // Test 3: Try without domain_desc
-  await testQuery("Test 3: With group and sector, no domain", {
-    source_desc: "SURVEY",
-    sector_desc: "ANIMALS & PRODUCTS",
-    commodity_desc: "CATTLE",
-    statisticcat_desc: "SLAUGHTER",
-    year: `${year}`,
-  });
-
-  // Test 4: Try ANNUAL frequency
-  await testQuery("Test 4: Annual frequency", {
-    source_desc: "SURVEY",
-    commodity_desc: "CATTLE",
-    statisticcat_desc: "SLAUGHTER",
-    freq_desc: "ANNUAL",
-    year: `${year}`,
-  });
-
-  // Test 5: Try MONTHLY frequency  
-  await testQuery("Test 5: Monthly frequency", {
-    source_desc: "SURVEY",
-    commodity_desc: "CATTLE",
-    statisticcat_desc: "SLAUGHTER",
-    freq_desc: "MONTHLY",
-    year: `${year}`,
-  });
-
-  // Test 6: Try WEEKLY frequency
-  await testQuery("Test 6: Weekly frequency", {
-    source_desc: "SURVEY",
-    commodity_desc: "CATTLE",
-    statisticcat_desc: "SLAUGHTER",
-    freq_desc: "WEEKLY",
-    year: `${year}`,
-  });
-
-  // Test 7: Try slaughter + FI (federally inspected)
-  await testQuery("Test 7: Slaughter FI", {
-    source_desc: "SURVEY",
-    commodity_desc: "CATTLE",
-    statisticcat_desc: "SLAUGHTER",
-    domain_desc: "TOTAL",
-    year: `${year}`,
-  });
-
-  // Test 8: Previous year in case current year has no data yet
-  await testQuery("Test 8: Previous year", {
-    source_desc: "SURVEY",
-    commodity_desc: "CATTLE",
-    statisticcat_desc: "SLAUGHTER",
-    year: `${year - 1}`,
-  });
-
-  // Test 9: Slaughter COMMERCIAL (different statisticcat)
-  await testQuery("Test 9: SLAUGHTER, COMMERCIAL, FI", {
-    source_desc: "SURVEY",
-    commodity_desc: "CATTLE",
-    statisticcat_desc: "SLAUGHTER, COMMERCIAL, FI",
-    year: `${year - 1}`,
-  });
-
-  // Test 10: Use get_param_values to check valid statisticcat_desc
-  const pvUrl = `https://quickstats.nass.usda.gov/api/get_param_values?key=${key}&param=statisticcat_desc&commodity_desc=CATTLE&source_desc=SURVEY`;
-  console.log("\n--- Test 10: Valid statisticcat_desc values for CATTLE ---");
-  try {
-    const res = await fetch(pvUrl);
-    const json = await res.json();
-    const vals = json.statisticcat_desc || [];
-    const slaughterVals = vals.filter(v => v.toLowerCase().includes("slaughter"));
-    console.log(`  Total values: ${vals.length}`);
-    console.log(`  Slaughter-related:`, slaughterVals);
-  } catch (e) {
-    console.log(`  ERROR: ${e.message}`);
-  }
-
-  // Test 11: Check valid freq_desc values for cattle slaughter
-  const fUrl = `https://quickstats.nass.usda.gov/api/get_param_values?key=${key}&param=freq_desc&commodity_desc=CATTLE&statisticcat_desc=SLAUGHTER&source_desc=SURVEY`;
-  console.log("\n--- Test 11: Valid freq_desc for CATTLE SLAUGHTER ---");
-  try {
-    const res = await fetch(fUrl);
-    const json = await res.json();
-    console.log(`  Values:`, json.freq_desc);
-  } catch (e) {
-    console.log(`  ERROR: ${e.message}`);
-  }
-
-  // Test 12: Check valid domain_desc for cattle slaughter
-  const dUrl = `https://quickstats.nass.usda.gov/api/get_param_values?key=${key}&param=domain_desc&commodity_desc=CATTLE&statisticcat_desc=SLAUGHTER&source_desc=SURVEY`;
-  console.log("\n--- Test 12: Valid domain_desc for CATTLE SLAUGHTER ---");
-  try {
-    const res = await fetch(dUrl);
-    const json = await res.json();
-    console.log(`  Values:`, json.domain_desc);
-  } catch (e) {
-    console.log(`  ERROR: ${e.message}`);
-  }
-}
-
-main();
+run().catch(function(e) { console.error("ERROR:", e.message); });

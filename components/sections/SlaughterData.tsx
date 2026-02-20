@@ -75,9 +75,9 @@ export function SlaughterData({ initialData }: SlaughterDataProps) {
             <Factory className="w-5 h-5 text-cornhusker-600" />
           </div>
           <div>
-            <CardTitle>Cattle Slaughter</CardTitle>
+            <CardTitle>Cattle Slaughter (National)</CardTitle>
             <CardDescription>
-              Weekly federally inspected cattle slaughter numbers
+              Weekly federally inspected national cattle slaughter totals
             </CardDescription>
           </div>
         </div>

@@ -1,13 +1,20 @@
 /**
- * USDA NASS Quick Stats API + LMPR Slaughter via MARS
- * NASS: https://quickstats.nass.usda.gov/api
- * MARS: https://marsapi.ams.usda.gov/services/v1.2
+ * USDA NASS Quick Stats API - Slaughter + Inventory
+ * https://quickstats.nass.usda.gov/api
+ *
+ * Key: statisticcat_desc must be "SLAUGHTERED" (not "SLAUGHTER")
  */
 
+import { z } from "zod";
 import { SlaughterData } from "../types";
 
 const NASS_BASE = "https://quickstats.nass.usda.gov/api/api_GET";
-const MARS_BASE = "https://marsapi.ams.usda.gov/services/v1.2";
+
+// Zod schemas for NASS API response validation
+const NassRowsSchema = z.array(z.record(z.any()));
+const NassResponseSchema = z
+  .object({ data: NassRowsSchema.optional(), error: z.any().optional() })
+  .passthrough();
 
 function getNassKey(): string {
   const key = process.env.USDA_NASS_API_KEY?.trim();
@@ -17,17 +24,8 @@ function getNassKey(): string {
   return key || "";
 }
 
-function getMarsKey(): string {
-  const key = process.env.USDA_MARKET_NEWS_API_KEY?.trim();
-  return key || "";
-}
-
-// --- NASS Quick Stats ---
-
 interface NASSQueryParams {
   source_desc?: string;
-  sector_desc?: string;
-  group_desc?: string;
   commodity_desc?: string;
   statisticcat_desc?: string;
   unit_desc?: string;
@@ -36,10 +34,9 @@ interface NASSQueryParams {
   state_name?: string;
   freq_desc?: string;
   year?: string;
-  format?: string;
 }
 
-async function fetchNASS<T>(params: NASSQueryParams): Promise<T | null> {
+async function fetchNASS(params: NASSQueryParams): Promise<Record<string, any>[] | null> {
   const apiKey = getNassKey();
 
   if (!apiKey) {
@@ -56,7 +53,7 @@ async function fetchNASS<T>(params: NASSQueryParams): Promise<T | null> {
   try {
     const url = `${NASS_BASE}?${queryParams.toString()}`;
     console.log(
-      `[v0] NASS fetch: ${params.statisticcat_desc} ${params.state_name || "NATIONAL"} key=${apiKey.substring(0, 4)}... ts=${Date.now()}`
+      `[v0] NASS fetch: ${params.statisticcat_desc} ${params.freq_desc || ""} ${params.state_name || "NATIONAL"} yr=${params.year} ts=${Date.now()}`
     );
     const response = await fetch(url, { cache: "no-store" });
 
@@ -67,10 +64,16 @@ async function fetchNASS<T>(params: NASSQueryParams): Promise<T | null> {
     }
 
     const json = await response.json();
-    console.log(
-      `[v0] NASS success, records=${Array.isArray(json.data) ? json.data.length : "unknown"}`
-    );
-    return json.data || json;
+    const parsed = NassResponseSchema.safeParse(json);
+
+    if (!parsed.success) {
+      console.error("[v0] NASS schema mismatch:", parsed.error.message);
+      return null;
+    }
+
+    const rows = parsed.data.data || [];
+    console.log(`[v0] NASS success, records=${rows.length}`);
+    return rows;
   } catch (error) {
     console.error("[v0] NASS fetch error:", error);
     return null;
@@ -78,143 +81,154 @@ async function fetchNASS<T>(params: NASSQueryParams): Promise<T | null> {
 }
 
 // Fetch cattle slaughter data from NASS
+// IMPORTANT: statisticcat_desc = "SLAUGHTERED" (not "SLAUGHTER")
 export async function fetchCattleSlaughter(): Promise<SlaughterData[]> {
   const currentYear = new Date().getFullYear();
+  const prevYear = currentYear - 1;
 
-  // Try Nebraska-specific first
-  let data = await fetchNASS<any[]>({
+  // Fetch both current year and prior year for YoY comparison
+  const baseParams: NASSQueryParams = {
     source_desc: "SURVEY",
-    sector_desc: "ANIMALS & PRODUCTS",
-    group_desc: "LIVESTOCK",
     commodity_desc: "CATTLE",
-    statisticcat_desc: "SLAUGHTER",
+    statisticcat_desc: "SLAUGHTERED",
     unit_desc: "HEAD",
+    agg_level_desc: "NATIONAL",
     domain_desc: "TOTAL",
-    agg_level_desc: "STATE",
-    state_name: "NEBRASKA",
     freq_desc: "WEEKLY",
-    year: `${currentYear}`,
-  });
+  };
 
-  // Fallback to national
+  const [currentData, priorData] = await Promise.all([
+    fetchNASS({ ...baseParams, year: `${currentYear}` }),
+    fetchNASS({ ...baseParams, year: `${prevYear}` }),
+  ]);
+
+  // If weekly doesn't work, try monthly
+  let data = currentData;
+  let priorYearData = priorData;
+
   if (!data || data.length === 0) {
-    data = await fetchNASS<any[]>({
-      source_desc: "SURVEY",
-      sector_desc: "ANIMALS & PRODUCTS",
-      group_desc: "LIVESTOCK",
-      commodity_desc: "CATTLE",
-      statisticcat_desc: "SLAUGHTER",
-      unit_desc: "HEAD",
-      domain_desc: "TOTAL",
-      agg_level_desc: "NATIONAL",
-      freq_desc: "WEEKLY",
-      year: `${currentYear}`,
-    });
+    console.log("[v0] NASS weekly empty, trying monthly");
+    const monthlyParams = { ...baseParams, freq_desc: "MONTHLY" };
+    const [mCurrent, mPrior] = await Promise.all([
+      fetchNASS({ ...monthlyParams, year: `${currentYear}` }),
+      fetchNASS({ ...monthlyParams, year: `${prevYear}` }),
+    ]);
+    data = mCurrent;
+    priorYearData = mPrior;
+  }
+
+  // Last resort: prior year monthly
+  if (!data || data.length === 0) {
+    console.log("[v0] NASS current year empty, trying previous year monthly");
+    data = await fetchNASS({ ...baseParams, freq_desc: "MONTHLY", year: `${prevYear}` });
   }
 
   if (!data || !Array.isArray(data)) {
     return [];
   }
 
-  const sorted = data
-    .filter((item) => item.Value && item.Value !== "(D)")
+  // Filter valid rows (national, valid Value)
+  const validRows = data.filter(
+    (item) =>
+      item.Value &&
+      item.Value !== "(D)" &&
+      item.Value !== "(NA)" &&
+      (item.agg_level_desc === "NATIONAL" || !item.agg_level_desc)
+  );
+
+  // Aggregate class rows into weekly totals
+  // Key: year-reference_period-week_ending
+  const weeklyTotals = new Map<string, number>();
+  const weekMetadata = new Map<string, any>();
+
+  for (const row of validRows) {
+    const weekKey = `${row.year}-${row.reference_period_desc || ""}-${row.week_ending || row.end_code || ""}`;
+    const value = parseInt((row.Value || "0").replace(/,/g, "")) || 0;
+    weeklyTotals.set(weekKey, (weeklyTotals.get(weekKey) || 0) + value);
+    if (!weekMetadata.has(weekKey)) {
+      weekMetadata.set(weekKey, row);
+    }
+  }
+
+  // Build prior-year lookup
+  const priorYearTotals = new Map<string, number>();
+  if (priorYearData && Array.isArray(priorYearData)) {
+    for (const row of priorYearData) {
+      if (!row.Value || row.Value === "(D)" || row.Value === "(NA)") continue;
+      const weekLabel = row.reference_period_desc || row.week_ending || "";
+      const key = `${row.year}-${weekLabel}`;
+      const value = parseInt((row.Value || "0").replace(/,/g, "")) || 0;
+      priorYearTotals.set(key, (priorYearTotals.get(key) || 0) + value);
+    }
+  }
+
+  // Sort entries by week ending descending
+  const sortedEntries = Array.from(weeklyTotals.entries())
+    .map(([key, total]) => ({
+      key,
+      total,
+      meta: weekMetadata.get(key),
+    }))
+    .filter((e) => e.meta?.year === `${currentYear}` || e.meta?.year === currentYear)
     .sort((a, b) => {
-      const dateA = new Date(a.week_ending || a.end_code || 0);
-      const dateB = new Date(b.week_ending || b.end_code || 0);
+      const dateA = new Date(a.meta?.week_ending || a.meta?.end_code || 0);
+      const dateB = new Date(b.meta?.week_ending || b.meta?.end_code || 0);
       return dateB.getTime() - dateA.getTime();
     })
     .slice(0, 10);
 
-  return sorted.map((item, index) => {
-    const currentValue = parseInt(item.Value.replace(/,/g, "")) || 0;
-    const prevItem = sorted[index + 1];
-    const prevValue = prevItem
-      ? parseInt(prevItem.Value.replace(/,/g, "")) || currentValue
-      : currentValue;
+  return sortedEntries.map((entry, index) => {
+    const currentValue = entry.total;
+    const prevEntry = sortedEntries[index + 1];
+    const prevWeekValue = prevEntry ? prevEntry.total : currentValue;
+
+    // Look up prior year by week label
+    const weekLabel = entry.meta?.reference_period_desc || "";
+    const priorYearKey = `${prevYear}-${weekLabel}`;
+    const prevYearValue = priorYearTotals.get(priorYearKey) || currentValue;
 
     return {
-      weekEnding: item.week_ending || item.end_code || "",
+      weekEnding: entry.meta?.week_ending || entry.meta?.end_code || "",
       cattleSlaughter: currentValue,
-      previousWeek: prevValue,
-      previousYear: currentValue,
+      previousWeek: prevWeekValue,
+      previousYear: prevYearValue,
       percentChangeWeek:
-        prevValue > 0 ? ((currentValue - prevValue) / prevValue) * 100 : 0,
-      percentChangeYear: 0,
-      region: item.state_name || item.agg_level_desc || "National",
+        prevWeekValue > 0 ? ((currentValue - prevWeekValue) / prevWeekValue) * 100 : 0,
+      percentChangeYear:
+        prevYearValue > 0 ? ((currentValue - prevYearValue) / prevYearValue) * 100 : 0,
+      region: "National",
     };
   });
 }
 
 // Fetch cattle inventory from NASS
-export async function fetchCattleInventory(): Promise<any[]> {
+export async function fetchCattleInventory(): Promise<Record<string, any>[]> {
   const currentYear = new Date().getFullYear();
 
-  const data = await fetchNASS<any[]>({
+  let data = await fetchNASS({
     source_desc: "SURVEY",
-    sector_desc: "ANIMALS & PRODUCTS",
-    group_desc: "LIVESTOCK",
     commodity_desc: "CATTLE",
     statisticcat_desc: "INVENTORY",
     unit_desc: "HEAD",
     agg_level_desc: "STATE",
     state_name: "NEBRASKA",
+    freq_desc: "ANNUAL",
     year: `${currentYear}`,
   });
 
-  return data || [];
-}
-
-// --- LMPR via MARS API (slug_id 3237 = Wyoming-Nebraska Direct Cattle) ---
-
-export async function fetchLMPRSlaughter(): Promise<SlaughterData[]> {
-  const apiKey = getMarsKey();
-  const url = `${MARS_BASE}/reports/3237`;
-
-  const headers: HeadersInit = { Accept: "application/json" };
-  if (apiKey) {
-    const encoded = Buffer.from(`${apiKey}:`).toString("base64");
-    headers["Authorization"] = `Basic ${encoded}`;
-  }
-
-  try {
-    console.log(`[v0] LMPR fetch: ${url} auth=${!!apiKey} ts=${Date.now()}`);
-    const response = await fetch(url, { headers, cache: "no-store" });
-
-    if (!response.ok) {
-      const body = await response.text();
-      console.error(`[v0] LMPR error ${response.status}:`, body);
-      return [];
-    }
-
-    const data = await response.json();
-    console.log(`[v0] LMPR success, records=${Array.isArray(data) ? data.length : "obj"}`);
-
-    if (!Array.isArray(data)) {
-      return [];
-    }
-
-    return data.slice(0, 8).map((item: any, index: number) => {
-      const currentValue =
-        parseInt(item.current_week_slaughter || item.head_count) || 0;
-      const prevWeek =
-        parseInt(item.previous_week_slaughter || item.prev_week) || currentValue;
-      const prevYear =
-        parseInt(item.year_ago_slaughter || item.prev_year) || currentValue;
-
-      return {
-        weekEnding: item.week_ending || item.report_date || "",
-        cattleSlaughter: currentValue,
-        previousWeek: prevWeek,
-        previousYear: prevYear,
-        percentChangeWeek:
-          prevWeek > 0 ? ((currentValue - prevWeek) / prevWeek) * 100 : 0,
-        percentChangeYear:
-          prevYear > 0 ? ((currentValue - prevYear) / prevYear) * 100 : 0,
-        region: item.region || item.market_location_name || "National",
-      };
+  // Fallback to previous year
+  if (!data || data.length === 0) {
+    data = await fetchNASS({
+      source_desc: "SURVEY",
+      commodity_desc: "CATTLE",
+      statisticcat_desc: "INVENTORY",
+      unit_desc: "HEAD",
+      agg_level_desc: "STATE",
+      state_name: "NEBRASKA",
+      freq_desc: "ANNUAL",
+      year: `${currentYear - 1}`,
     });
-  } catch (error) {
-    console.error("[v0] LMPR fetch error:", error);
-    return [];
   }
+
+  return data || [];
 }

@@ -27,6 +27,7 @@ export function FuturesPrices({ initialData }: FuturesPricesProps) {
   const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"live" | "feeder">("live");
+  const [dataSource, setDataSource] = useState<"live" | "demo" | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -36,6 +37,7 @@ export function FuturesPrices({ initialData }: FuturesPricesProps) {
       if (!response.ok) throw new Error("Failed to fetch futures data");
       const result = await response.json();
       setData(result.data);
+      setDataSource(result.source || null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred");
     } finally {
@@ -55,15 +57,24 @@ export function FuturesPrices({ initialData }: FuturesPricesProps) {
   return (
     <Card id="futures">
       <CardHeader
-        action={<RefreshButton onRefresh={fetchData} />}
+        action={
+          <div className="flex items-center gap-2">
+            {dataSource && (
+              <Badge variant={dataSource === "live" ? "success" : "warning"}>
+                {dataSource === "live" ? "LIVE" : "DEMO DATA"}
+              </Badge>
+            )}
+            <RefreshButton onRefresh={fetchData} />
+          </div>
+        }
       >
         <div className="flex items-center gap-2">
           <div className="p-2 bg-blue-100 rounded-lg">
             <LineChart className="w-5 h-5 text-blue-600" />
           </div>
           <div>
-            <CardTitle>CME Cattle Futures</CardTitle>
-            <CardDescription>Live cattle and feeder cattle contracts</CardDescription>
+            <CardTitle>CME Cattle Futures (Front Month)</CardTitle>
+            <CardDescription>Delayed front-month quotes via public feed</CardDescription>
           </div>
         </div>
       </CardHeader>
@@ -86,7 +97,7 @@ export function FuturesPrices({ initialData }: FuturesPricesProps) {
                     : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                 }`}
               >
-                Live Cattle (LE)
+                Live Cattle (LE=F)
               </button>
               <button
                 onClick={() => setActiveTab("feeder")}
@@ -96,7 +107,7 @@ export function FuturesPrices({ initialData }: FuturesPricesProps) {
                     : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                 }`}
               >
-                Feeder Cattle (GF)
+                Feeder Cattle (GF=F)
               </button>
             </div>
 
@@ -236,6 +247,7 @@ export function FuturesPrices({ initialData }: FuturesPricesProps) {
                 {data.lastUpdated
                   ? format(new Date(data.lastUpdated), "MMM d, h:mm a")
                   : "Recently"}
+                {" "}Front-month coverage only.
               </span>
             </div>
           </>
